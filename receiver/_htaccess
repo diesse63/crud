@@ -1,0 +1,9 @@
+Options -Indexes
+
+<FilesMatch "^(deploy_receiver_config\.php|.*\.key|.*\.log)$">
+    Require all denied
+</FilesMatch>
+
+<FilesMatch "^(deploy_receiver\.php|db_schema_receiver\.php)$">
+    Require all granted
+</FilesMatch>

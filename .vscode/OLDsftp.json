@@ -1,0 +1,17 @@
+{
+    "name": "Altervista",
+    "host": "ftp.dasi.altervista.org",
+    "protocol": "ftp",
+    "port": 21,
+    "username": "dasi",
+    "password": "PTj9tjzR5WjR",
+    "remotePath": "/",
+    "context": ".",
+    "uploadOnSave": true,
+    "ignore": [
+        "**/.vscode/**",
+        "**/.git/**",
+        "**/DB.sql"
+    ],
+    "syncMode": "update"
+}
