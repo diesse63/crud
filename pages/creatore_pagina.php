@@ -3086,6 +3086,255 @@ if ($action !== '') {
             }
         }
 
+        if ($action === 'copy_configuration') {
+            $payload = json_decode((string) file_get_contents('php://input'), true);
+            $configurationId = (int) ($payload['configuration_id'] ?? 0);
+
+            if ($configurationId <= 0) {
+                pannellateJsonResponse([
+                    'ok' => false,
+                    'message' => 'Configurazione non valida.'
+                ], 422);
+            }
+
+            $page = $db->fetch(
+                "SELECT id, nome_pagina, nome_file, percorso_file, descrizione, titolo_pagina, IDtipo, IDtabella_principale,
+                        righe_per_pagina, ricerca_abilitata, ordinamento_abilitato, paginazione_abilitata,
+                        mostra_dettaglio_modale, crud_abilitato, crud_aggiungi, crud_modifica, crud_cancella,
+                        sql_generata
+                 FROM pagine_visualizzazione
+                 WHERE id = ? AND IDprogetto = ?",
+                [$configurationId, $progettoId]
+            );
+
+            if (!$page) {
+                pannellateJsonResponse([
+                    'ok' => false,
+                    'message' => 'Configurazione non trovata.'
+                ], 404);
+            }
+
+            $oldFileName = (string) $page['nome_file'];
+            $oldStoredPath = trim((string) ($page['percorso_file'] ?? ''));
+            $baseName = preg_replace('/\.php$/i', '', $oldFileName);
+            $copyFileName = sanitizeFileName($baseName . '_copia');
+            if ($copyFileName === '') {
+                $copyFileName = sanitizeFileName((string) ($page['nome_pagina'] ?? 'copia_pagina'));
+            }
+
+            if ($copyFileName === $oldFileName) {
+                $copyFileName = sanitizeFileName($baseName . '_copy');
+            }
+
+            $copyPath = rtrim($paths['pages'], DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . $copyFileName;
+            if (is_file($copyPath)) {
+                pannellateJsonResponse([
+                    'ok' => false,
+                    'message' => 'Esiste già un file con lo stesso nome nella cartella pages.'
+                ], 409);
+            }
+
+            $duplicate = (int) $db->fetchColumn(
+                "SELECT COUNT(*)
+                 FROM pagine_visualizzazione
+                 WHERE IDprogetto = ?
+                   AND (LOWER(nome_pagina) = LOWER(?) OR LOWER(nome_file) = LOWER(?))",
+                [$progettoId, (string) ($page['nome_pagina'] ?? '') . ' copia', $copyFileName]
+            );
+            if ($duplicate > 0) {
+                pannellateJsonResponse([
+                    'ok' => false,
+                    'message' => 'Esiste già una configurazione copiata con lo stesso nome.'
+                ], 409);
+            }
+
+            $sourcePath = null;
+            if ($oldStoredPath !== '') {
+                $realPages = realpath($paths['pages']);
+                $realOldFile = realpath($oldStoredPath);
+                if ($realPages !== false && $realOldFile !== false) {
+                    $allowedPrefix = rtrim($realPages, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR;
+                    if (!str_starts_with($realOldFile, $allowedPrefix)) {
+                        pannellateJsonResponse([
+                            'ok' => false,
+                            'message' => 'Il file sorgente non appartiene alla cartella pages del progetto.'
+                        ], 409);
+                    }
+                    $sourcePath = $realOldFile;
+                }
+            }
+
+            if ($sourcePath === null) {
+                $sourcePath = rtrim($paths['pages'], DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . $oldFileName;
+            }
+
+            if (!is_file($sourcePath)) {
+                pannellateJsonResponse([
+                    'ok' => false,
+                    'message' => 'File sorgente non trovato.'
+                ], 404);
+            }
+
+            $copyPageName = (string) ($page['nome_pagina'] ?? '') . ' copia';
+            $copyTitle = trim((string) ($page['titolo_pagina'] ?? '')) !== ''
+                ? (string) $page['titolo_pagina'] . ' copia'
+                : $copyPageName;
+
+            $db->beginTransaction();
+            try {
+                if (!copy($sourcePath, $copyPath)) {
+                    throw new RuntimeException('Impossibile copiare il file PHP generato.');
+                }
+
+                $db->execute(
+                    "INSERT INTO pagine_visualizzazione (
+                        IDprogetto,
+                        nome_pagina,
+                        nome_file,
+                        descrizione,
+                        titolo_pagina,
+                        IDtipo,
+                        IDtabella_principale,
+                        righe_per_pagina,
+                        ricerca_abilitata,
+                        ordinamento_abilitato,
+                        paginazione_abilitata,
+                        mostra_dettaglio_modale,
+                        crud_abilitato,
+                        crud_aggiungi,
+                        crud_modifica,
+                        crud_cancella,
+                        percorso_file,
+                        sql_generata,
+                        stato,
+                        data_generazione,
+                        data_modifica
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'GENERATA', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+                    [
+                        $progettoId,
+                        $copyPageName,
+                        $copyFileName,
+                        $page['descrizione'] ?? null,
+                        $copyTitle,
+                        $page['IDtipo'] ?? null,
+                        $page['IDtabella_principale'] ?? null,
+                        $page['righe_per_pagina'] ?? null,
+                        $page['ricerca_abilitata'] ?? 0,
+                        $page['ordinamento_abilitato'] ?? 0,
+                        $page['paginazione_abilitata'] ?? 0,
+                        $page['mostra_dettaglio_modale'] ?? 0,
+                        $page['crud_abilitato'] ?? 0,
+                        $page['crud_aggiungi'] ?? 0,
+                        $page['crud_modifica'] ?? 0,
+                        $page['crud_cancella'] ?? 0,
+                        $copyPath,
+                        $page['sql_generata'] ?? null,
+                    ]
+                );
+
+                $newPageId = (int) $db->lastInsertId();
+
+                $pageTables = $db->fetchAll(
+                    "SELECT * FROM pagine_visualizzazione_tabelle WHERE IDpagina = ? ORDER BY ordine_join, id",
+                    [$configurationId]
+                );
+                foreach ($pageTables as $row) {
+                    $db->execute(
+                        "INSERT INTO pagine_visualizzazione_tabelle (
+                            IDpagina, IDtabella, tipo_tabella, alias_sql, IDforeign_key, tipo_join, ordine_join, selezionata
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                        [
+                            $newPageId,
+                            $row['IDtabella'],
+                            $row['tipo_tabella'],
+                            $row['alias_sql'],
+                            $row['IDforeign_key'],
+                            $row['tipo_join'],
+                            $row['ordine_join'],
+                            $row['selezionata'],
+                        ]
+                    );
+                }
+
+                $pageFields = $db->fetchAll(
+                    "SELECT * FROM pagine_visualizzazione_campi WHERE IDpagina = ? ORDER BY ordine, id",
+                    [$configurationId]
+                );
+                foreach ($pageFields as $row) {
+                    $db->execute(
+                        "INSERT INTO pagine_visualizzazione_campi (
+                            IDpagina, IDpagina_tabella, IDcampo, ordine, etichetta, nome_qualificato,
+                            visibile_tabella, visibile_scheda, visibile_modale, ordinabile, ricercabile,
+                            allineamento, formato_visualizzazione, larghezza_colonna, larghezza_bootstrap,
+                            filtro_abilitato, tipo_filtro, link_pagina_id, link_parametro, link_campo_valore, percorso_base
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        [
+                            $newPageId,
+                            $row['IDpagina_tabella'],
+                            $row['IDcampo'],
+                            $row['ordine'],
+                            $row['etichetta'],
+                            $row['nome_qualificato'],
+                            $row['visibile_tabella'],
+                            $row['visibile_scheda'],
+                            $row['visibile_modale'],
+                            $row['ordinabile'],
+                            $row['ricercabile'],
+                            $row['allineamento'],
+                            $row['formato_visualizzazione'],
+                            $row['larghezza_colonna'],
+                            $row['larghezza_bootstrap'],
+                            $row['filtro_abilitato'],
+                            $row['tipo_filtro'],
+                            $row['link_pagina_id'],
+                            $row['link_parametro'],
+                            $row['link_campo_valore'],
+                            $row['percorso_base'],
+                        ]
+                    );
+                }
+
+                $pageModal = $db->fetchAll(
+                    "SELECT * FROM pagine_visualizzazione_modali WHERE IDpagina = ?",
+                    [$configurationId]
+                );
+                foreach ($pageModal as $row) {
+                    $db->execute(
+                        "INSERT INTO pagine_visualizzazione_modali (
+                            IDpagina, IDtabella_collegata, IDforeign_key, IDcampo_principale, IDcampo_collegato,
+                            titolo_modale, tipo_visualizzazione, configurazione_campi
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                        [
+                            $newPageId,
+                            $row['IDtabella_collegata'],
+                            $row['IDforeign_key'],
+                            $row['IDcampo_principale'],
+                            $row['IDcampo_collegato'],
+                            $row['titolo_modale'],
+                            $row['tipo_visualizzazione'],
+                            $row['configurazione_campi'],
+                        ]
+                    );
+                }
+
+                $db->commit();
+
+                pannellateJsonResponse([
+                    'ok' => true,
+                    'message' => 'Configurazione copiata correttamente.',
+                    'configuration_id' => $newPageId,
+                    'file_name' => $copyFileName,
+                    'file_path' => $copyPath,
+                ]);
+            } catch (Throwable $e) {
+                $db->rollBack();
+                if (is_file($copyPath)) {
+                    @unlink($copyPath);
+                }
+                throw $e;
+            }
+        }
+
         if ($action === 'table_details') {
             $tableId = (int) ($_GET['table_id'] ?? 0);
             $table = pannellateLoadTable($db, $progettoId, $tableId);

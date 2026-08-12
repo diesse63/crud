@@ -1,7 +1,7 @@
 <?php
 /**
  * Gestione cartella progetto e pubblicazione HTTPS.
- * Versione: 4.9.6 - 11/08/2026
+ * Versione: 4.9.7 - 11/08/2026
  *
  * Funzioni principali:
  * - esplorazione, rinomina e cancellazione dei file del progetto;
@@ -4493,14 +4493,15 @@ document.addEventListener('DOMContentLoaded', function () {
     document.querySelectorAll('.js-deploy-action').forEach(function (button) {
         button.addEventListener('click', function (event) {
             const action = button.dataset.action;
-            button.closest('form')?.querySelector('.deploy-file-action')?.setAttribute('value', action);
+            const form = button.closest('form');
+            form?.querySelector('.deploy-file-action')?.setAttribute('value', action);
             if (button.dataset.confirm) {
                 event.preventDefault();
                 event.stopPropagation();
-                const form = button.closest('form');
                 const messages = {
                     associate: 'Associare questa cartella remota al progetto selezionato?',
                     disassociate: 'Disassociare questa cartella remota dal progetto selezionato?',
+                    applyAlignmentTable: 'Aggiornare questa tabella con il solo allineamento delle differenze rilevate?',
                     publish: function () {
                         return [
                             'Pubblicare il progetto tramite HTTPS?',
@@ -4520,7 +4521,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     : (messages[button.dataset.confirm] || 'Confermare l’operazione?');
                 const proceed = function () {
                     form?.querySelector('.deploy-file-action')?.setAttribute('value', action);
-                    form.submit();
+                    form?.submit();
                 };
                 if (typeof window.showConfirmationModal === 'function') {
                     window.showConfirmationModal(confirmMessage, proceed);

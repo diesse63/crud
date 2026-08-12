@@ -6,7 +6,7 @@
  * Generatore : CRUD Generator
  * Versione   : 10.2
  * Creato il  : 2026-07-31 00:00:00
- * Modificato il: 2026-08-10 00:00
+ * Modificato il: 2026-08-11 00:00
  * Progetto   : CRUD Generator
  * ============================================================
  */
@@ -36,6 +36,10 @@ try {
 }
 
 $deleteConfigurationId = isset($_GET['delete_configuration'])
+    ? (int) ($_GET['configuration_id'] ?? 0)
+    : 0;
+
+$copyConfigurationId = isset($_GET['copy_configuration'])
     ? (int) ($_GET['configuration_id'] ?? 0)
     : 0;
 
@@ -123,6 +127,201 @@ if ($deleteConfigurationId > 0 && $progettoId > 0) {
                 . '</div>';
             return;
         }
+    }
+}
+
+if ($copyConfigurationId > 0 && $progettoId > 0) {
+    $page = $db->fetch(
+        "SELECT id, nome_pagina, nome_file, percorso_file, descrizione, titolo_pagina, IDtipo, IDtabella_principale,
+                righe_per_pagina, ricerca_abilitata, ordinamento_abilitato, paginazione_abilitata,
+                mostra_dettaglio_modale, crud_abilitato, crud_aggiungi, crud_modifica, crud_cancella, sql_generata
+         FROM pagine_visualizzazione
+         WHERE id = ? AND IDprogetto = ?",
+        [$copyConfigurationId, $progettoId]
+    );
+
+    if ($page) {
+        $pageFileName = trim((string) ($page['nome_file'] ?? ''));
+        $storedPath = trim((string) ($page['percorso_file'] ?? ''));
+        $sourcePath = null;
+        if ($storedPath !== '') {
+            $realPath = realpath($storedPath);
+            $projectPages = realpath(__DIR__ . '/sito/' . preg_replace('/[^a-z0-9_]/i', '', strtolower($progettoNome ?: 'gestionale')) . '/pages');
+            if ($realPath !== false && $projectPages !== false) {
+                $allowedPrefix = rtrim($projectPages, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR;
+                if (str_starts_with($realPath, $allowedPrefix)) {
+                    $sourcePath = $realPath;
+                }
+            }
+        }
+
+        if ($sourcePath === null && $pageFileName !== '') {
+            $sourcePath = rtrim(__DIR__ . '/sito/' . preg_replace('/[^a-z0-9_]/i', '', strtolower($progettoNome ?: 'gestionale')) . '/pages', DIRECTORY_SEPARATOR)
+                . DIRECTORY_SEPARATOR . $pageFileName;
+        }
+
+        if ($sourcePath && is_file($sourcePath)) {
+            $copyFileName = preg_replace('/\.php$/i', '', $pageFileName) . '_copia.php';
+            $copyPath = dirname($sourcePath) . DIRECTORY_SEPARATOR . $copyFileName;
+
+            if (!is_file($copyPath)) {
+                $db->beginTransaction();
+                try {
+                    if (!copy($sourcePath, $copyPath)) {
+                        throw new RuntimeException('Impossibile copiare il file PHP generato.');
+                    }
+
+                    $copyPageName = (string) ($page['nome_pagina'] ?? '') . ' copia';
+                    $copyTitle = trim((string) ($page['titolo_pagina'] ?? '')) !== ''
+                        ? (string) $page['titolo_pagina'] . ' copia'
+                        : $copyPageName;
+
+                    $db->execute(
+                        "INSERT INTO pagine_visualizzazione (
+                            IDprogetto,
+                            nome_pagina,
+                            nome_file,
+                            descrizione,
+                            titolo_pagina,
+                            IDtipo,
+                            IDtabella_principale,
+                            righe_per_pagina,
+                            ricerca_abilitata,
+                            ordinamento_abilitato,
+                            paginazione_abilitata,
+                            mostra_dettaglio_modale,
+                            crud_abilitato,
+                            crud_aggiungi,
+                            crud_modifica,
+                            crud_cancella,
+                            percorso_file,
+                            sql_generata,
+                            stato,
+                            data_generazione,
+                            data_modifica
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'GENERATA', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+                        [
+                            $progettoId,
+                            $copyPageName,
+                            $copyFileName,
+                            $page['descrizione'] ?? null,
+                            $copyTitle,
+                            $page['IDtipo'] ?? null,
+                            $page['IDtabella_principale'] ?? null,
+                            $page['righe_per_pagina'] ?? null,
+                            $page['ricerca_abilitata'] ?? 0,
+                            $page['ordinamento_abilitato'] ?? 0,
+                            $page['paginazione_abilitata'] ?? 0,
+                            $page['mostra_dettaglio_modale'] ?? 0,
+                            $page['crud_abilitato'] ?? 0,
+                            $page['crud_aggiungi'] ?? 0,
+                            $page['crud_modifica'] ?? 0,
+                            $page['crud_cancella'] ?? 0,
+                            $copyPath,
+                            $page['sql_generata'] ?? null,
+                        ]
+                    );
+                    $newPageId = (int) $db->lastInsertId();
+
+                    foreach ($db->fetchAll(
+                        "SELECT * FROM pagine_visualizzazione_tabelle WHERE IDpagina = ? ORDER BY ordine_join, id",
+                        [$copyConfigurationId]
+                    ) as $row) {
+                        $db->execute(
+                            "INSERT INTO pagine_visualizzazione_tabelle (
+                                IDpagina, IDtabella, tipo_tabella, alias_sql, IDforeign_key, tipo_join, ordine_join, selezionata
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                            [
+                                $newPageId,
+                                $row['IDtabella'],
+                                $row['tipo_tabella'],
+                                $row['alias_sql'],
+                                $row['IDforeign_key'],
+                                $row['tipo_join'],
+                                $row['ordine_join'],
+                                $row['selezionata'],
+                            ]
+                        );
+                    }
+
+                    foreach ($db->fetchAll(
+                        "SELECT * FROM pagine_visualizzazione_campi WHERE IDpagina = ? ORDER BY ordine, id",
+                        [$copyConfigurationId]
+                    ) as $row) {
+                        $db->execute(
+                            "INSERT INTO pagine_visualizzazione_campi (
+                                IDpagina, IDpagina_tabella, IDcampo, ordine, etichetta, nome_qualificato,
+                                visibile_tabella, visibile_scheda, visibile_modale, ordinabile, ricercabile,
+                                allineamento, formato_visualizzazione, larghezza_colonna, larghezza_bootstrap,
+                                filtro_abilitato, tipo_filtro, link_pagina_id, link_parametro, link_campo_valore, percorso_base
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                            [
+                                $newPageId,
+                                $row['IDpagina_tabella'],
+                                $row['IDcampo'],
+                                $row['ordine'],
+                                $row['etichetta'],
+                                $row['nome_qualificato'],
+                                $row['visibile_tabella'],
+                                $row['visibile_scheda'],
+                                $row['visibile_modale'],
+                                $row['ordinabile'],
+                                $row['ricercabile'],
+                                $row['allineamento'],
+                                $row['formato_visualizzazione'],
+                                $row['larghezza_colonna'],
+                                $row['larghezza_bootstrap'],
+                                $row['filtro_abilitato'],
+                                $row['tipo_filtro'],
+                                $row['link_pagina_id'],
+                                $row['link_parametro'],
+                                $row['link_campo_valore'],
+                                $row['percorso_base'],
+                            ]
+                        );
+                    }
+
+                    foreach ($db->fetchAll(
+                        "SELECT * FROM pagine_visualizzazione_modali WHERE IDpagina = ?",
+                        [$copyConfigurationId]
+                    ) as $row) {
+                        $db->execute(
+                            "INSERT INTO pagine_visualizzazione_modali (
+                                IDpagina, IDtabella_collegata, IDforeign_key, IDcampo_principale, IDcampo_collegato,
+                                titolo_modale, tipo_visualizzazione, configurazione_campi
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                            [
+                                $newPageId,
+                                $row['IDtabella_collegata'],
+                                $row['IDforeign_key'],
+                                $row['IDcampo_principale'],
+                                $row['IDcampo_collegato'],
+                                $row['titolo_modale'],
+                                $row['tipo_visualizzazione'],
+                                $row['configurazione_campi'],
+                            ]
+                        );
+                    }
+
+                    $db->commit();
+                } catch (Throwable $copyError) {
+                    if ($db->inTransaction()) {
+                        $db->rollBack();
+                    }
+                    if (is_file($copyPath)) {
+                        @unlink($copyPath);
+                    }
+                    echo '<div class="alert alert-danger m-3">'
+                        . 'Impossibile copiare la pagina: '
+                        . htmlspecialchars($copyError->getMessage(), ENT_QUOTES, 'UTF-8')
+                        . '</div>';
+                    return;
+                }
+            }
+        }
+
+        header('Location: index.php?page=tabella_pannellate');
+        exit;
     }
 }
 
@@ -353,6 +552,12 @@ function creatorVersionLabel(array $row): string
                             <td><span class="badge <?= htmlspecialchars($status['class'], ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars($status['label'], ENT_QUOTES, 'UTF-8') ?></span></td>
                             <td><span class="badge <?= htmlspecialchars($transmission['class'], ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars($transmission['label'], ENT_QUOTES, 'UTF-8') ?></span></td>
                             <td class="text-end text-nowrap">
+                                <a class="btn btn-outline-warning me-2"
+                                   style="min-width:11rem"
+                                   href="index.php?page=tabella_pannellate&copy_configuration=1&configuration_id=<?= (int) ($row['id'] ?? 0) ?>&t=<?= $cacheBuster ?>"
+                                   onclick="return confirm('Copiare questa pagina e il suo file PHP?');">
+                                    Copia
+                                </a>
                                 <a class="btn btn-outline-danger"
                                    style="min-width:11rem"
                                    href="index.php?page=tabella_pannellate&delete_configuration=1&configuration_id=<?= (int) ($row['id'] ?? 0) ?>&t=<?= $cacheBuster ?>"
