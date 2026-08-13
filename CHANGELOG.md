@@ -25,6 +25,7 @@ Il formato segue i principi di Keep a Changelog.
 
 ### Corretto
 
+- Ripristinato in `tabella_pannellate.php` l'apertura della modifica tramite `modifica_pagina.php`, così il click su una pagina esistente ricarica la configurazione completa prima di passare al creatore.
 - In `cartella_progetto.php` la rinomina di un file aggiorna ora anche i riferimenti nel menu Home gestito da `genera_home.php`, quando il file è presente come voce di pagina.
 - Corretto nel HEREDOC di `buildGeneratedPageCode` l'inserimento di `{$dropdownCode}`, così il file generato espande davvero il blocco SQL dei dropdown FK invece di scrivere testo letterale.
 - Nel file generato la sezione `$crudDropdowns = [];` riceve ora un blocco costruito dal generatore che popola i dropdown FK partendo da `source_fk_id` e dai metadati `fk`.

@@ -1170,7 +1170,41 @@ function displayValue(mixed \$value, string \$format, string \$basePath = ''): s
         : \$raw;
     \$safeResource = htmlspecialchars(\$resource, ENT_QUOTES, 'UTF-8');
 
+    \$format = trim((string) \$format);
+    if (\$format === '') {
+        return nl2br(htmlspecialchars((string) \$value, ENT_QUOTES, 'UTF-8'));
+    }
+
     switch (\$format) {
+        case '#.##0':
+            return htmlspecialchars(number_format((float) \$value, 0, ',', '.'), ENT_QUOTES, 'UTF-8');
+        case '#.##0,00':
+            return htmlspecialchars(number_format((float) \$value, 2, ',', '.'), ENT_QUOTES, 'UTF-8');
+        case 'dd/mm/yyyy':
+            \$timestamp = strtotime((string) \$value);
+            return \$timestamp ? date('d/m/Y', \$timestamp) : htmlspecialchars((string) \$value, ENT_QUOTES, 'UTF-8');
+        case 'yyyy-mm-dd hh:mm:ss':
+            \$timestamp = strtotime((string) \$value);
+            return \$timestamp ? date('Y-m-d H:i:s', \$timestamp) : htmlspecialchars((string) \$value, ENT_QUOTES, 'UTF-8');
+        case 'hh:mm:ss':
+            \$timestamp = strtotime((string) \$value);
+            return \$timestamp ? date('H:i:s', \$timestamp) : htmlspecialchars((string) \$value, ENT_QUOTES, 'UTF-8');
+        case 'utente@esempio.i':
+            return '<a href="mailto:' . htmlspecialchars(\$raw, ENT_QUOTES, 'UTF-8') . '">'
+                . htmlspecialchars(\$raw, ENT_QUOTES, 'UTF-8') . '</a>';
+        case 'https://esempio.it':
+            return '<a href="' . \$safeResource . '" target="_blank" rel="noopener">'
+                . htmlspecialchars(\$raw, ENT_QUOTES, 'UTF-8') . '</a>';
+        case '{"esempio":true}':
+            \$decoded = json_decode((string) \$value, true);
+            \$formatted = \$decoded === null
+                ? (string) \$value
+                : json_encode(\$decoded, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+            return '<pre class="mb-0 small">' . htmlspecialchars(\$formatted, ENT_QUOTES, 'UTF-8') . '</pre>';
+        case '1':
+            return (bool) \$value
+                ? '<span class="badge bg-success">Sì</span>'
+                : '<span class="badge bg-secondary">No</span>';
         case 'NUMERO':
             return htmlspecialchars(number_format((float) \$value, 2, ',', '.'), ENT_QUOTES, 'UTF-8');
         case 'VALUTA':
@@ -1233,6 +1267,64 @@ function linkedValue(array \$field, array \$row): string
 
     return '<a class="text-decoration-none" href="'
         . htmlspecialchars(\$url, ENT_QUOTES, 'UTF-8') . '">' . \$html . '</a>';
+}
+
+function defaultFormatByType(string \$type): string
+{
+    \$type = strtolower(trim(\$type));
+
+    if (in_array(\$type, ['int', 'integer', 'smallint', 'mediumint', 'bigint', 'decimal', 'numeric', 'float', 'double', 'real'], true)) {
+        return in_array(\$type, ['decimal', 'numeric', 'float', 'double', 'real'], true) ? '0,00' : '0';
+    }
+
+    if (\$type === 'date') {
+        return '1970-01-01';
+    }
+
+    if (in_array(\$type, ['datetime', 'timestamp'], true)) {
+        return '1970-01-01 00:00:00';
+    }
+
+    if (\$type === 'time') {
+        return '00:00:00';
+    }
+
+    if (in_array(\$type, ['email', 'mail'], true)) {
+        return 'utente@esempio.it';
+    }
+
+    if (in_array(\$type, ['url', 'link'], true)) {
+        return 'https://esempio.it';
+    }
+
+    if (\$type === 'json') {
+        return '{"esempio":true}';
+    }
+
+    if (in_array(\$type, ['char', 'varchar', 'text', 'tinytext', 'mediumtext', 'longtext', 'string'], true)) {
+        return 'testo';
+    }
+
+    if (in_array(\$type, ['boolean', 'bool', 'tinyint'], true)) {
+        return '1';
+    }
+
+    return '';
+}
+
+function resolveFieldFormat(array \$field): string
+{
+    \$rawFormat = trim((string) (\$field['format'] ?? ''));
+    if (\$rawFormat !== '' && strcasecmp(\$rawFormat, 'AUTOMATICO') !== 0) {
+        return \$rawFormat;
+    }
+
+    \$customFormat = trim((string) (\$field['customFormat'] ?? ''));
+    if (\$customFormat !== '') {
+        return \$customFormat;
+    }
+
+    return defaultFormatByType((string) (\$field['fieldType'] ?? \$field['tipo'] ?? ''));
 }
 
 function buildQuery(array \$overrides = []): string
@@ -3579,6 +3671,7 @@ if ($progettoId > 0) {
             tableId: Number(field.IDtabella),
             tableName: field.tabella_nome,
             fieldName: field.campo_nome,
+            fieldType: field.campo_tipo || field.tipo || '',
             qualifiedName: field.nome_qualificato,
             label: field.etichetta || field.nome_qualificato,
             visibleTable: Number(field.visibile_tabella) === 1,
@@ -3586,7 +3679,15 @@ if ($progettoId > 0) {
             visibleModal: Number(field.visibile_modale) === 1,
             searchable: Number(field.ricercabile) === 1,
             sortable: Number(field.ordinabile) === 1,
-            format: field.formato_visualizzazione || 'AUTOMATICO',
+            format: resolveFieldFormat({
+                format: field.formato_visualizzazione,
+                customFormat: field.formato_visualizzazione,
+                fieldType: field.campo_tipo || field.tipo || '',
+                tipo: field.campo_tipo || field.tipo || ''
+            }),
+            customFormat: String(field.formato_visualizzazione || '').startsWith('CUSTOM:')
+                ? String(field.formato_visualizzazione).slice(7)
+                : '',
             alignment: field.allineamento || 'SINISTRA',
             width: field.larghezza_colonna || '',
             bootstrapCol: String(field.larghezza_bootstrap || '6'),
@@ -3766,6 +3867,21 @@ if ($progettoId > 0) {
         if (field.is_unique) badges.push('<span class="badge text-bg-success">UK</span>');
         else if (field.is_index) badges.push('<span class="badge text-bg-secondary">IDX</span>');
         return badges.join(' ');
+    }
+
+    function parseFieldFormat(formatValue) {
+        const format = String(formatValue || 'AUTOMATICO');
+        if (format.startsWith('CUSTOM:')) {
+            return {
+                base: 'PERSONALIZZATO',
+                custom: format.slice(7),
+            };
+        }
+
+        return {
+            base: format,
+            custom: '',
+        };
     }
 
     function resetConfiguration() {
@@ -4026,7 +4142,8 @@ if ($progettoId > 0) {
             visibleModal: true,
             searchable: !['json', 'text'].includes(String(found.field.tipo).toLowerCase()),
             sortable: !['json', 'text'].includes(String(found.field.tipo).toLowerCase()),
-            format: 'AUTOMATICO',
+            format: defaultFormatByType(found.field.tipo || ''),
+            customFormat: '',
             alignment: ['int', 'float', 'decimal'].includes(String(found.field.tipo).toLowerCase())
                 ? 'DESTRA'
                 : 'SINISTRA',
@@ -4068,7 +4185,11 @@ if ($progettoId > 0) {
 
         updateModalManagementButton();
 
-        selectedFields.innerHTML = state.selectedFields.map((item, index) => `
+        selectedFields.innerHTML = state.selectedFields.map((item, index) => {
+            const parsedFormat = parseFieldFormat(item.format);
+            const typeDefault = defaultFormatByType(item.fieldType || item.tipo || '');
+            const customValue = escapeHtml(item.customFormat || parsedFormat.custom || typeDefault);
+            return `
             <div class="selected-item"
                  draggable="true"
                  data-index="${index}">
@@ -4095,13 +4216,12 @@ if ($progettoId > 0) {
                     </div>
                     <div class="col-md-6">
                         <label class="form-label small mb-1">Formato</label>
-                        <select class="form-select form-select-sm field-option"
-                                data-index="${index}"
-                                data-key="format">
-                            ${['AUTOMATICO','TESTO','NUMERO','VALUTA','DATA','DATA_ORA','BOOLEANO','JSON','IMMAGINE','FILE','URL','EMAIL']
-                                .map(value => `<option value="${value}" ${item.format === value ? 'selected' : ''}>${value}</option>`)
-                                .join('')}
-                        </select>
+                        <input type="text"
+                               class="form-control form-control-sm field-option"
+                               data-index="${index}"
+                               data-key="customFormat"
+                               value="${customValue}"
+                               placeholder="dd/mm/aaaa, hh:mm:ss, #.##0,00, 00000, data unix">
                     </div>
                     <div class="col-md-6">
                         <label class="form-label small mb-1">Allineamento</label>
@@ -4188,7 +4308,7 @@ if ($progettoId > 0) {
                     </div>
                 </div>
             </div>
-        `).join('');
+        `}).join('');
 
         document.querySelectorAll('.remove-selected').forEach(button => {
             button.addEventListener('click', event => {
@@ -4204,9 +4324,32 @@ if ($progettoId > 0) {
             input.addEventListener('input', event => {
                 const index = Number(event.currentTarget.dataset.index);
                 const key = event.currentTarget.dataset.key;
-                state.selectedFields[index][key] = event.currentTarget.value;
-                refreshPreviewDebounced();
-            });
+                if (key === 'format') {
+                    const value = event.currentTarget.value;
+                    if (value.startsWith('CUSTOM:')) {
+                        state.selectedFields[index].format = `CUSTOM:${state.selectedFields[index].customFormat || value.slice(7)}`;
+                        state.selectedFields[index].customFormat = state.selectedFields[index].customFormat || value.slice(7);
+                    } else if (value === 'PERSONALIZZATO') {
+                        state.selectedFields[index].format = `CUSTOM:${state.selectedFields[index].customFormat || ''}`;
+                    } else {
+                        state.selectedFields[index].format = value;
+                        state.selectedFields[index].customFormat = '';
+                    }
+                    renderSelectedFields();
+                    refreshPreviewDebounced();
+                    return;
+                }
+
+                if (key === 'customFormat') {
+                    state.selectedFields[index].customFormat = event.currentTarget.value;
+                    state.selectedFields[index].format = `CUSTOM:${event.currentTarget.value}`;
+                    refreshPreviewDebounced();
+                    return;
+                }
+
+            state.selectedFields[index][key] = event.currentTarget.value;
+            refreshPreviewDebounced();
+        });
         });
 
         document.querySelectorAll('.field-check').forEach(input => {
@@ -4244,8 +4387,40 @@ if ($progettoId > 0) {
 
 
     function previewSampleValue(item, rowNumber) {
-        const format = String(item.format || 'AUTOMATICO').toUpperCase();
+        const resolvedFormat = resolveFieldFormat(item);
+        const rawFormat = String(resolvedFormat || 'AUTOMATICO');
+        const customFormat = rawFormat.startsWith('CUSTOM:') ? rawFormat.slice(7) : String(item.customFormat || '');
+        const format = rawFormat.startsWith('CUSTOM:') ? 'PERSONALIZZATO' : rawFormat.toUpperCase();
+        const fieldType = String(item.fieldType || item.tipo || '').toLowerCase();
         const fieldName = String(item.fieldName || '').toLowerCase();
+
+        if (fieldType === 'date') {
+            return '1970-01-01';
+        }
+
+        if (['datetime', 'timestamp'].includes(fieldType)) {
+            return '1970-01-01 00:00:00';
+        }
+
+        if (fieldType === 'time') {
+            return '00:00:00';
+        }
+
+        if (['email', 'mail'].includes(fieldType)) {
+            return 'utente@esempio.it';
+        }
+
+        if (['url', 'link'].includes(fieldType)) {
+            return 'https://esempio.it';
+        }
+
+        if (fieldType === 'json') {
+            return '<pre class="small mb-0">{&quot;esempio&quot;:true}</pre>';
+        }
+
+        if (['boolean', 'bool', 'tinyint'].includes(fieldType)) {
+            return '1';
+        }
 
         if (format === 'VALUTA') {
             return `${(1250.50 + rowNumber * 137.25).toLocaleString('it-IT', {
@@ -4276,6 +4451,27 @@ if ($progettoId > 0) {
         if (format === 'FILE') return '<span class="btn btn-sm btn-outline-primary">documento.pdf</span>';
         if (format === 'URL') return '<span class="text-primary text-decoration-underline">https://esempio.it</span>';
         if (format === 'EMAIL') return '<span class="text-primary text-decoration-underline">utente@esempio.it</span>';
+        if (format === 'JSON') return '<pre class="small mb-0">{&quot;esempio&quot;:true}</pre>';
+
+        if (format === 'PERSONALIZZATO') {
+            const mask = customFormat || 'dd/mm/aaaa';
+            if (mask === '0') return String(7 + rowNumber);
+            if (mask === '0,00') return `${(12.5 + rowNumber).toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+            if (mask === '#,##0') return (1000 + rowNumber * 100).toLocaleString('it-IT', { maximumFractionDigits: 0 });
+            if (mask === '#,##0,00') return (1000.5 + rowNumber * 12.5).toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            if (mask === 'gg/mm/aaaa') return `${String(10 + rowNumber).padStart(2, '0')}/07/2026`;
+            if (mask === 'gg-mmm-aaaa') return `${String(10 + rowNumber).padStart(2, '0')}/lug/2026`;
+            if (mask === 'aaaa-mm-gg') return `2026-07-${String(10 + rowNumber).padStart(2, '0')}`;
+            if (mask === 'gg/mm/aa') return `${String(10 + rowNumber).padStart(2, '0')}/07/26`;
+            if (mask === 'hh:mm') return `${String(8 + rowNumber).padStart(2, '0')}:30`;
+            if (mask === 'hh:mm:ss') return `${String(8 + rowNumber).padStart(2, '0')}:30:15`;
+            if (mask === 'hh:mm AM/PM') return `${String(8 + rowNumber).padStart(2, '0')}:30 ${rowNumber % 2 === 0 ? 'AM' : 'PM'}`;
+            if (mask === '0%') return `${10 + rowNumber}%`;
+            if (mask === '0,0%') return `${(10 + rowNumber).toLocaleString('it-IT', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
+            if (mask === '0,00%') return `${(10 + rowNumber).toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`;
+            if (/^0+$/.test(mask)) return String(rowNumber).padStart(mask.length, '0');
+            return escapeHtml(mask.replace(/data unix/i, String(1700000000 + rowNumber)));
+        }
 
         if (format === 'JSON') {
             return `<pre class="small mb-0">${escapeHtml(JSON.stringify({

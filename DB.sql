@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: localhost
--- Creato il: Ago 05, 2026 alle 07:35
+-- Creato il: Ago 12, 2026 alle 17:28
 -- Versione del server: 8.0.45
 -- Versione PHP: 8.0.22
 
@@ -180,7 +180,7 @@ CREATE TABLE `pagine_visualizzazione_campi` (
   `ordinabile` tinyint(1) NOT NULL DEFAULT '1',
   `ricercabile` tinyint(1) NOT NULL DEFAULT '1',
   `allineamento` enum('SINISTRA','CENTRO','DESTRA') NOT NULL DEFAULT 'SINISTRA',
-  `formato_visualizzazione` enum('AUTOMATICO','TESTO','NUMERO','VALUTA','DATA','DATA_ORA','BOOLEANO','JSON','IMMAGINE','FILE','URL','EMAIL') NOT NULL DEFAULT 'AUTOMATICO',
+  `formato_visualizzazione` varchar(255) DEFAULT NULL,
   `larghezza_colonna` varchar(20) DEFAULT NULL,
   `larghezza_bootstrap` varchar(2) NOT NULL DEFAULT '6',
   `filtro_abilitato` tinyint(1) NOT NULL DEFAULT '0',
@@ -241,6 +241,7 @@ CREATE TABLE `pagine_visualizzazione_tipo` (
   `descrizione` varchar(255) NOT NULL DEFAULT '',
   `righe_per_pagina` int NOT NULL DEFAULT '25',
   `righe_bloccate` tinyint(1) NOT NULL DEFAULT '0',
+  `show_modal` tinyint(1) DEFAULT '1',
   `ordine` int NOT NULL DEFAULT '0',
   `attivo` tinyint(1) NOT NULL DEFAULT '1'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

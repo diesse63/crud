@@ -257,58 +257,71 @@ $cache_buster = time();
     </div>
 </div>
 
-<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
     function showToast(type, message) {
         let bgColor = (type === 'success') ? 'bg-success' : (type === 'warning' ? 'bg-warning text-dark' : 'bg-danger');
         const toastHtml = `<div class="toast align-items-center text-white ${bgColor} border-0" role="alert"><div class="d-flex"><div class="toast-body">${message}</div><button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button></div></div>`;
-        const $toast = $(toastHtml);
-        $('.toast-container').append($toast);
-        new bootstrap.Toast($toast[0]).show();
+        const template = document.createElement('template');
+        template.innerHTML = toastHtml.trim();
+        const toastElement = template.content.firstElementChild;
+        const container = document.querySelector('.toast-container');
+        if (!toastElement || !container) return;
+        container.appendChild(toastElement);
+        new bootstrap.Toast(toastElement).show();
     }
 
-    $(document).ready(function () {
-        const $sidebar = $('#sidebar');
-        const $overlay = $('#sidebarOverlay');
+    document.addEventListener('DOMContentLoaded', function () {
+        const sidebar = document.getElementById('sidebar');
+        const overlay = document.getElementById('sidebarOverlay');
+        const sidebarCollapse = document.getElementById('sidebarCollapse');
+        const confirmActionButton = document.getElementById('confirmActionButton');
+        const confirmationModalBody = document.getElementById('confirmationModalBody');
         const mobileQuery = window.matchMedia('(max-width: 768px)');
 
         // GESTIONE SIDEBAR
         function toggleSidebar() {
             if (mobileQuery.matches) {
-                $sidebar.toggleClass('active');
-                $overlay.toggleClass('active');
+                sidebar?.classList.toggle('active');
+                overlay?.classList.toggle('active');
             } else {
-                $sidebar.toggleClass('collapsed');
+                sidebar?.classList.toggle('collapsed');
             }
         }
 
-        $('#sidebarCollapse, #sidebarOverlay').on('click', toggleSidebar);
+        sidebarCollapse?.addEventListener('click', toggleSidebar);
+        overlay?.addEventListener('click', toggleSidebar);
 
         // Chiusura automatica su selezione (Mobile)
-        $('#sidebar a').on('click', function() {
-            if ($(this).hasClass('dropdown-toggle')) return;
-            if (mobileQuery.matches) {
-                $sidebar.removeClass('active');
-                $overlay.removeClass('active');
-            }
+        document.querySelectorAll('#sidebar a').forEach(function (link) {
+            link.addEventListener('click', function () {
+                if (link.classList.contains('dropdown-toggle')) return;
+                if (mobileQuery.matches) {
+                    sidebar?.classList.remove('active');
+                    overlay?.classList.remove('active');
+                }
+            });
         });
 
         // Logica originale Modals/Tabelle
         let confirmCallback = null;
         window.showConfirmationModal = function(message, callback) {
             confirmCallback = callback;
-            $('#confirmationModalBody').html(message);
+            if (confirmationModalBody) {
+                confirmationModalBody.innerHTML = message;
+            }
             new bootstrap.Modal(document.getElementById('confirmationModal')).show();
-        }
-        $('#confirmActionButton').on('click', function() {
+        };
+        confirmActionButton?.addEventListener('click', function() {
             if (confirmCallback) confirmCallback();
-            bootstrap.Modal.getInstance(document.getElementById('confirmationModal')).hide();
+            bootstrap.Modal.getInstance(document.getElementById('confirmationModal'))?.hide();
         });
 
-        $(document).on('click', '.table-row-tabella', function(e) {
-            if ($(e.target).closest('a, button, form, input').length) return;
-            window.location.href = $(this).data('href');
+        document.querySelectorAll('.table-row-tabella').forEach(function (row) {
+            row.addEventListener('click', function (e) {
+                if (e.target.closest('a, button, form, input')) return;
+                window.location.href = row.dataset.href || '';
+            });
         });
 
         <?php if (isset($_SESSION['success_msg'])): ?>

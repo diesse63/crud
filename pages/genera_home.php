@@ -60,6 +60,43 @@ function ghIcon(string $icon): string {
     if ($icon === '') return 'bi-file-earmark';
     return str_starts_with($icon, 'bi-') ? $icon : 'bi-' . $icon;
 }
+function ghIconOptions(): array {
+    return [
+        'bi-file-earmark' => 'File',
+        'bi-house' => 'Home',
+        'bi-grid' => 'Griglia',
+        'bi-folder' => 'Cartella',
+        'bi-folder2-open' => 'Cartella aperta',
+        'bi-folder-plus' => 'Cartella con aggiunta',
+        'bi-file-earmark-text' => 'Documento',
+        'bi-file-earmark-code' => 'Codice',
+        'bi-table' => 'Tabella',
+        'bi-database' => 'Database',
+        'bi-database-gear' => 'Database con impostazioni',
+        'bi-gear' => 'Impostazioni',
+        'bi-gear-fill' => 'Impostazioni piene',
+        'bi-list' => 'Elenco',
+        'bi-list-ul' => 'Elenco puntato',
+        'bi-layout-text-window-reverse' => 'Layout finestra',
+        'bi-box-arrow-right' => 'Uscita',
+        'bi-plus-lg' => 'Aggiungi',
+        'bi-pencil' => 'Modifica',
+        'bi-trash' => 'Cestino',
+        'bi-search' => 'Cerca',
+        'bi-funnel' => 'Filtro',
+        'bi-bell' => 'Notifica',
+        'bi-star' => 'Preferito',
+        'bi-heart' => 'Cuore',
+        'bi-link-45deg' => 'Collegamento',
+        'bi-diagram-3' => 'Relazioni',
+        'bi-person' => 'Persona',
+        'bi-people' => 'Persone',
+        'bi-calendar' => 'Calendario',
+        'bi-check-circle' => 'Confermato',
+        'bi-exclamation-circle' => 'Attenzione',
+        'bi-info-circle' => 'Informazioni',
+    ];
+}
 function ghPages(string $path): array {
     if (!is_dir($path)) return [];
     $result = [];
@@ -461,7 +498,7 @@ PHP;
 }
 ?>
 <style>
-.menu-builder-root,.menu-children{min-height:70px}.page-item,.menu-item{border:1px solid #dee2e6;border-radius:.6rem;background:#fff;margin-bottom:.6rem}.page-item{padding:.7rem;cursor:grab}.menu-head{display:flex;align-items:center;gap:.5rem;padding:.65rem}.drag{cursor:grab;color:#6c757d}.menu-editor{border-top:1px solid #dee2e6;background:#f8f9fa;padding:.75rem}.menu-children{margin:0 .65rem .65rem 2rem;padding:.5rem;border:1px dashed #adb5bd;border-radius:.5rem;background:#f8f9fa}.menu-children:empty:before{content:"Trascina qui le sottovoci";display:block;text-align:center;color:#8b9299;font-size:.8rem;padding:.5rem}.sortable-ghost{opacity:.35}.icon-preview{width:36px;height:36px;display:inline-flex;align-items:center;justify-content:center;border:1px solid #ced4da;border-radius:.4rem}.sticky-actions{position:sticky;bottom:0;background:#fffffff2;border-top:1px solid #ddd;z-index:20}
+.menu-builder-root,.menu-children{min-height:70px}.page-item,.menu-item{border:1px solid #dee2e6;border-radius:.6rem;background:#fff;margin-bottom:.6rem}.page-item{padding:.7rem;cursor:grab}.menu-head{display:flex;align-items:center;gap:.5rem;padding:.65rem}.drag{cursor:grab;color:#6c757d}.menu-editor{border-top:1px solid #dee2e6;background:#f8f9fa;padding:.75rem}.menu-children{margin:0 .65rem .65rem 2rem;padding:.5rem;border:1px dashed #adb5bd;border-radius:.5rem;background:#f8f9fa}.menu-children:empty:before{content:"Trascina qui le sottovoci";display:block;text-align:center;color:#8b9299;font-size:.8rem;padding:.5rem}.sortable-ghost{opacity:.35}.icon-preview{width:36px;height:36px;display:inline-flex;align-items:center;justify-content:center;border:1px solid #ced4da;border-radius:.4rem}.icon-live{min-width:2.35rem;justify-content:center}.icon-filter::placeholder{color:#adb5bd}.sticky-actions{position:sticky;bottom:0;background:#fffffff2;border-top:1px solid #ddd;z-index:20}@media (max-width: 767.98px){.menu-editor .row{--bs-gutter-y:.5rem}.menu-editor .col-md-3,.menu-editor .col-md-4,.menu-editor .col-md-5{width:100%}.menu-editor .input-group{flex-wrap:nowrap}.menu-editor .icon-filter,.menu-editor .form-select{min-height:2.25rem}.menu-editor .icon-live{width:2.5rem}}
 </style>
 
 <div class="container-fluid p-4">
@@ -528,6 +565,85 @@ const normalizePageFileName=v=>{
     const base=file.split(/[\\/]/).pop()||'';
     return base.toLowerCase().endsWith('.php')?base:'';
 };
+const normalizeIcon = value => {
+    const icon = String(value ?? '').trim().replace(/[^a-zA-Z0-9\-_]/g, '');
+    if (!icon) {
+        return 'bi-file-earmark';
+    }
+    return icon.startsWith('bi-') ? icon : `bi-${icon}`;
+};
+const iconOptions = [
+    ['bi-file-earmark','File'],
+    ['bi-house','Home'],
+    ['bi-grid','Griglia'],
+    ['bi-house-door','Casa con porta'],
+    ['bi-house-heart','Casa con cuore'],
+    ['bi-shop','Negozio'],
+    ['bi-building','Edificio'],
+    ['bi-building-gear','Edificio con impostazioni'],
+    ['bi-person-badge','Badge persona'],
+    ['bi-person-gear','Persona con impostazioni'],
+    ['bi-people-fill','Gruppo persone'],
+    ['bi-folder','Cartella'],
+    ['bi-folder2-open','Cartella aperta'],
+    ['bi-folder-plus','Cartella con aggiunta'],
+    ['bi-file-earmark-text','Documento'],
+    ['bi-file-earmark-code','Codice'],
+    ['bi-file-earmark-plus','Nuovo file'],
+    ['bi-file-earmark-spreadsheet','Foglio dati'],
+    ['bi-table','Tabella'],
+    ['bi-database','Database'],
+    ['bi-database-gear','Database con impostazioni'],
+    ['bi-server','Server'],
+    ['bi-hdd-network','Rete'],
+    ['bi-gear','Impostazioni'],
+    ['bi-gear-fill','Impostazioni piene'],
+    ['bi-list','Elenco'],
+    ['bi-list-ul','Elenco puntato'],
+    ['bi-list-check','Lista controlli'],
+    ['bi-card-list','Scheda elenco'],
+    ['bi-layout-text-window-reverse','Layout finestra'],
+    ['bi-box-arrow-right','Uscita'],
+    ['bi-plus-lg','Aggiungi'],
+    ['bi-pencil','Modifica'],
+    ['bi-pencil-square','Modifica scheda'],
+    ['bi-trash','Cestino'],
+    ['bi-trash3','Eliminazione'],
+    ['bi-search','Cerca'],
+    ['bi-funnel','Filtro'],
+    ['bi-funnel-fill','Filtro pieno'],
+    ['bi-bell','Notifica'],
+    ['bi-bell-fill','Notifica piena'],
+    ['bi-star','Preferito'],
+    ['bi-heart','Cuore'],
+    ['bi-link-45deg','Collegamento'],
+    ['bi-diagram-3','Relazioni'],
+    ['bi-diagram-2','Schema'],
+    ['bi-person','Persona'],
+    ['bi-person-lines-fill','Persona con elenco'],
+    ['bi-calendar','Calendario'],
+    ['bi-calendar-event','Evento'],
+    ['bi-clock','Orario'],
+    ['bi-check-circle','Confermato'],
+    ['bi-exclamation-circle','Attenzione'],
+    ['bi-info-circle','Informazioni']
+];
+const iconOptionHtml = iconOptions.map(([value,label])=>`<option value="${esc(value)}">${esc(label)} (${esc(value)})</option>`).join('');
+const renderIconSelect = (selectedIcon, filterText = '') => {
+    const normalized = normalizeIcon(selectedIcon || 'bi-file-earmark');
+    const filter = String(filterText ?? '').trim().toLowerCase();
+    const options = iconOptions.map(([value,label]) => {
+        if (filter && !value.toLowerCase().includes(filter) && !label.toLowerCase().includes(filter)) {
+            return '';
+        }
+        const selected = value === normalized ? ' selected' : '';
+        return `<option value="${esc(value)}"${selected}>${esc(label)} (${esc(value)})</option>`;
+    }).join('');
+    const custom = iconOptions.some(([value]) => value === normalized)
+        ? ''
+        : `<option value="${esc(normalized)}" selected>${esc(normalized)} (personalizzata)</option>`;
+    return options + custom;
+};
 async function req(url,opt={}){
     const r=await fetch(url,opt);
     const raw=await r.text();
@@ -575,11 +691,13 @@ function renderAvailable(){
     A.innerHTML=rows.map(p=>`<div class="page-item" data-file="${esc(p.file_name)}" data-label="${esc(p.label)}"><i class="bi bi-grip-vertical"></i> <i class="bi bi-file-earmark-code text-primary"></i> <strong>${esc(p.label)}</strong><div class="small text-muted ms-4">${esc(p.file_name)}</div></div>`).join('')||'<div class="text-muted text-center p-4">Nessuna pagina disponibile</div>';
     state.availableSortable=new Sortable(A,{group:{name:'menu',pull:'clone',put:false},sort:false,draggable:'.page-item'});
 }
-function itemHtml(x){return `<div class="menu-item" data-id="${x.clientId}" data-type="${x.type}"><div class="menu-head"><span class="drag"><i class="bi bi-grip-vertical"></i></span><span class="icon-preview"><i class="bi ${esc(x.icon)}"></i></span><div class="flex-grow-1"><strong class="summary">${esc(x.label)}</strong><div class="small text-muted">${x.type==='GRUPPO'?'Gruppo':esc(x.file_name)}</div></div><button class="btn btn-sm btn-outline-secondary edit"><i class="bi bi-pencil"></i></button><button class="btn btn-sm btn-outline-danger del"><i class="bi bi-trash"></i></button></div><div class="menu-editor d-none"><div class="row g-2"><div class="col-md-5"><label class="small">Label</label><input class="form-control form-control-sm label" value="${esc(x.label)}"></div><div class="col-md-4"><label class="small">Icona Bootstrap</label><input class="form-control form-control-sm icon" value="${esc(x.icon)}"></div><div class="col-md-3"><label class="small d-block">Visibile</label><input type="checkbox" class="form-check-input visible" ${x.visible?'checked':''}></div></div></div><div class="menu-children">${(x.children||[]).map(itemHtml).join('')}</div></div>`}
+function itemHtml(x){
+    const selectedIcon = normalizeIcon(x.icon || 'bi-file-earmark');
+    return `<div class="menu-item" data-id="${x.clientId}" data-type="${x.type}"><div class="menu-head"><span class="drag"><i class="bi bi-grip-vertical"></i></span><span class="icon-preview"><i class="bi ${esc(selectedIcon)}"></i></span><div class="flex-grow-1"><strong class="summary">${esc(x.label)}</strong><div class="small text-muted">${x.type==='GRUPPO'?'Gruppo':esc(x.file_name)}</div></div><button class="btn btn-sm btn-outline-secondary edit"><i class="bi bi-pencil"></i></button><button class="btn btn-sm btn-outline-danger del"><i class="bi bi-trash"></i></button></div><div class="menu-editor d-none"><div class="row g-2 align-items-end"><div class="col-md-5"><label class="small">Label</label><input class="form-control form-control-sm label" value="${esc(x.label)}"></div><div class="col-md-3"><label class="small">Cerca icona</label><input class="form-control form-control-sm icon-filter" placeholder="cartella, file, bi-folder..."></div><div class="col-md-4"><label class="small">Icona Bootstrap</label><div class="input-group input-group-sm"><span class="input-group-text icon-live"><i class="bi ${esc(selectedIcon)}"></i></span><select class="form-select form-select-sm icon">${renderIconSelect(selectedIcon)}</select></div></div><div class="col-md-3"><label class="small d-block">Visibile</label><input type="checkbox" class="form-check-input visible" ${x.visible?'checked':''}></div></div></div><div class="menu-children">${(x.children||[]).map(itemHtml).join('')}</div></div>`}
 function find(a,k){for(const x of a){if(x.clientId===k)return x;const y=find(x.children||[],k);if(y)return y}return null}
 function remove(a,k){const i=a.findIndex(x=>x.clientId===k);if(i>=0)return a.splice(i,1)[0];for(const x of a){const y=remove(x.children||[],k);if(y)return y}return null}
 function sync(){function read(c){return [...c.children].filter(e=>e.classList.contains('menu-item')).map(e=>{const old=find(state.menu,e.dataset.id);return{clientId:e.dataset.id,type:e.dataset.type,file_name:old?.file_name||'',label:e.querySelector(':scope > .menu-editor .label')?.value.trim()||old?.label||'',icon:e.querySelector(':scope > .menu-editor .icon')?.value.trim()||old?.icon||'bi-file-earmark',visible:e.querySelector(':scope > .menu-editor .visible')?.checked??true,children:read(e.querySelector(':scope > .menu-children'))}})}state.menu=read(R)}
-function bind(){R.querySelectorAll('.edit').forEach(b=>b.onclick=()=>b.closest('.menu-item').querySelector(':scope > .menu-editor').classList.toggle('d-none'));R.querySelectorAll('.del').forEach(b=>b.onclick=()=>{sync();const e=b.closest('.menu-item'),x=find(state.menu,e.dataset.id);if(confirm(`Eliminare "${x?.label||''}" dal menu?`)){remove(state.menu,e.dataset.id);render()}});R.querySelectorAll('.label,.icon,.visible').forEach(c=>c.oninput=()=>{const e=c.closest('.menu-item');e.querySelector(':scope > .menu-head .summary').textContent=e.querySelector('.label').value||'Senza label';let i=e.querySelector('.icon').value.trim();if(!i.startsWith('bi-'))i='bi-'+i;e.querySelector('.icon-preview i').className='bi '+i})}
+function bind(){R.querySelectorAll('.edit').forEach(b=>b.onclick=()=>b.closest('.menu-item').querySelector(':scope > .menu-editor').classList.toggle('d-none'));R.querySelectorAll('.del').forEach(b=>b.onclick=()=>{sync();const e=b.closest('.menu-item'),x=find(state.menu,e.dataset.id);if(confirm(`Eliminare "${x?.label||''}" dal menu?`)){remove(state.menu,e.dataset.id);render()}});R.querySelectorAll('.label,.icon,.visible,.icon-filter').forEach(c=>c.onchange=()=>{const e=c.closest('.menu-item');e.querySelector(':scope > .menu-head .summary').textContent=e.querySelector('.label').value||'Senza label';const i=normalizeIcon(e.querySelector('.icon').value);e.querySelector('.icon-preview i').className='bi '+i;e.querySelector('.icon-live i').className='bi '+i;if(c.classList.contains('icon-filter')){const sel=e.querySelector('.icon');sel.innerHTML=renderIconSelect(sel.value,c.value)}})}
 function render(){state.sortables.forEach(s=>s.destroy());state.sortables=[];R.innerHTML=state.menu.map(itemHtml).join('')||'<div class="text-muted text-center p-5 border rounded">Trascina qui le pagine</div>';bind();[R,...R.querySelectorAll('.menu-children')].forEach(c=>{const s=new Sortable(c,{group:'menu',animation:150,handle:'.drag',draggable:'.menu-item,.page-item',onAdd:e=>{if(e.item.classList.contains('page-item')){const n={clientId:id(),type:'PAGINA',file_name:e.item.dataset.file,label:e.item.dataset.label,icon:'bi-file-earmark',visible:true,children:[]};e.item.remove();sync();const pe=e.to.closest('.menu-item');if(e.to.classList.contains('menu-children')&&pe)find(state.menu,pe.dataset.id).children.splice(e.newIndex,0,n);else state.menu.splice(e.newIndex,0,n);render()}else setTimeout(sync)},onEnd:()=>setTimeout(()=>{sync();renderAvailable()})});state.sortables.push(s)});renderAvailable()}
 function serial(a){return a.map(x=>({type:x.type,file_name:x.file_name,label:x.label,icon:x.icon,visible:x.visible,children:serial(x.children||[])}))}
 async function load(){

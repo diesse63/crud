@@ -6,7 +6,7 @@
  * Generatore : CRUD Generator
  * Versione   : 10.2
  * Creato il  : 2026-07-31 00:00:00
- * Modificato il: 2026-08-11 00:00
+ * Modificato il: 2026-08-13 00:00
  * Progetto   : CRUD Generator
  * ============================================================
  */
@@ -48,7 +48,7 @@ $openUpdateId = isset($_GET['open_update'])
     : 0;
 
 if ($openUpdateId > 0 && $progettoId > 0) {
-    pannellateRedirectToCreator($openUpdateId);
+    pannellateRedirectToUpdater($openUpdateId);
 }
 
 if ($deleteConfigurationId > 0 && $progettoId > 0) {
@@ -455,6 +455,47 @@ function creatorVersionLabel(array $row): string
 
     return '-';
 }
+function creatorSourceVersion(): string
+{
+    static $cachedVersion = null;
+    if ($cachedVersion !== null) {
+        return $cachedVersion;
+    }
+
+    $creatorFile = __DIR__ . '/creatore_pagina.php';
+    if (!is_file($creatorFile) || !is_readable($creatorFile)) {
+        $cachedVersion = crudVersionNormalize('10.2');
+        return $cachedVersion;
+    }
+
+    $content = @file_get_contents($creatorFile);
+    if ($content === false) {
+        $cachedVersion = crudVersionNormalize('10.2');
+        return $cachedVersion;
+    }
+
+    if (preg_match('/\* Generatore Scheda Singola - versione\s*([0-9]+(?:\.[0-9]+)+)/i', $content, $matches)) {
+        $cachedVersion = crudVersionNormalize((string) $matches[1]);
+        return $cachedVersion;
+    }
+
+    $cachedVersion = crudVersionNormalize('10.2');
+    return $cachedVersion;
+}
+function creatorVersionIconClass(string $version): string
+{
+    $normalizedVersion = crudVersionNormalize($version, '');
+    if ($normalizedVersion === '-') {
+        return 'text-secondary';
+    }
+
+    $latestCreatorVersion = creatorSourceVersion();
+    if ($normalizedVersion === $latestCreatorVersion) {
+        return 'text-success';
+    }
+
+    return 'text-danger';
+}
 ?>
 <style>
 .tabella-pannellate-fab{
@@ -486,7 +527,12 @@ function creatorVersionLabel(array $row): string
     <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
         <div>
             <h2 class="mb-0">Elenco schede configurate nel progetto attivo - gestionale</h2>
-            <div class="text-muted">Gestione pagine</div>
+            <div class="text-muted">
+                Gestione pagine
+                <span class="badge bg-light text-dark border ms-2">
+                    Creator <?= htmlspecialchars(creatorSourceVersion(), ENT_QUOTES, 'UTF-8') ?>
+                </span>
+            </div>
         </div>
     </div>
     <a class="btn btn-primary tabella-pannellate-fab"
@@ -547,7 +593,7 @@ function creatorVersionLabel(array $row): string
                                 'UTF-8'
                             ) ?></td>
                             <td><?= htmlspecialchars($typeLabel, ENT_QUOTES, 'UTF-8') ?></td>
-                            <td><span class="badge text-bg-secondary"><?= htmlspecialchars($creatorVersion, ENT_QUOTES, 'UTF-8') ?></span></td>
+                            <td><span class="badge bg-light text-dark border"><i class="bi bi-circle-fill <?= htmlspecialchars(creatorVersionIconClass($creatorVersion), ENT_QUOTES, 'UTF-8') ?> me-1" aria-hidden="true"></i><?= htmlspecialchars($creatorVersion, ENT_QUOTES, 'UTF-8') ?></span></td>
                             <td><span class="badge text-bg-secondary"><?= htmlspecialchars($pageVersion, ENT_QUOTES, 'UTF-8') ?></span></td>
                             <td><span class="badge <?= htmlspecialchars($status['class'], ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars($status['label'], ENT_QUOTES, 'UTF-8') ?></span></td>
                             <td><span class="badge <?= htmlspecialchars($transmission['class'], ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars($transmission['label'], ENT_QUOTES, 'UTF-8') ?></span></td>
