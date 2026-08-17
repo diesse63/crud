@@ -2,7 +2,7 @@
 /**
  * CRUD Generator – PHP MySQL
  * Confronto schema locale e DB destinatario
- * Versione: 1.2.1
+ * Versione: 1.2
  * Creato il: 2026-07-26
  */
 
@@ -354,7 +354,7 @@ function crudSchemaFetchRemote(
         CURLOPT_TIMEOUT => 60,
         CURLOPT_SSL_VERIFYPEER => true,
         CURLOPT_SSL_VERIFYHOST => 2,
-        CURLOPT_USERAGENT => 'CRUD-Schema-Inspector/1.0.0',
+        CURLOPT_USERAGENT => 'CRUD-Schema-Inspector/1.0',
     ]);
 
     $body = curl_exec($ch);
@@ -407,7 +407,7 @@ function crudSchemaApplyRemote(
         CURLOPT_TIMEOUT => 120,
         CURLOPT_SSL_VERIFYPEER => true,
         CURLOPT_SSL_VERIFYHOST => 2,
-        CURLOPT_USERAGENT => 'CRUD-Schema-Aligner/1.0.0',
+        CURLOPT_USERAGENT => 'CRUD-Schema-Aligner/1.0',
     ]);
 
     $body = curl_exec($ch);

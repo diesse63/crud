@@ -4,7 +4,7 @@
  * File generato automaticamente dall'applicazione CRUD.
  *
  * Generatore : CRUD Generator
- * Versione   : 10.2
+ * Versione   : 1.2
  * Creato il  : 2026-07-31 00:00:00
  * Modificato il: 2026-08-13 00:00
  * Progetto   : CRUD Generator
@@ -464,22 +464,22 @@ function creatorSourceVersion(): string
 
     $creatorFile = __DIR__ . '/creatore_pagina.php';
     if (!is_file($creatorFile) || !is_readable($creatorFile)) {
-        $cachedVersion = crudVersionNormalize('10.2');
+        $cachedVersion = crudVersionNormalize('1.2');
         return $cachedVersion;
     }
 
     $content = @file_get_contents($creatorFile);
     if ($content === false) {
-        $cachedVersion = crudVersionNormalize('10.2');
+        $cachedVersion = crudVersionNormalize('1.2');
         return $cachedVersion;
     }
 
-    if (preg_match('/\* Generatore Scheda Singola - versione\s*([0-9]+(?:\.[0-9]+)+)/i', $content, $matches)) {
+    if (preg_match('/\* Generatore Scheda Singola - versione\s*([0-9]+\.[0-9]+)/i', $content, $matches)) {
         $cachedVersion = crudVersionNormalize((string) $matches[1]);
         return $cachedVersion;
     }
 
-    $cachedVersion = crudVersionNormalize('10.2');
+    $cachedVersion = crudVersionNormalize('1.2');
     return $cachedVersion;
 }
 function creatorVersionIconClass(string $version): string

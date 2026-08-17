@@ -1,14 +1,14 @@
 <?php
 /**
  * Gestione cartella progetto e pubblicazione HTTPS.
- * Versione: 4.9.7 - 11/08/2026
+ * Versione: 1.9 - 11/08/2026
  *
  * Funzioni principali:
  * - esplorazione, rinomina e cancellazione dei file del progetto;
  * - esportazione ZIP, mantenuta come procedura alternativa;
  * - salvataggio configurazione HTTPS per singolo progetto;
  * - token cifrato sul server tramite AES-256-GCM;
- * - ping, inspect, associate, disassociate e pubblicazione tramite deploy_receiver.php v1.2.3;
+ * - ping, inspect, associate, disassociate e pubblicazione tramite deploy_receiver.php v1.2;
  * - protocol_version=1, verifica SHA-256, pubblicazione smart dei soli file necessari e risposta JSON;
  * - pubblicazione HTTPS dei soli file del progetto;
  * - configurazione DB destinatario integrata nel file, senza setup_db_destinatario.php e senza librerie esterne;
@@ -724,7 +724,7 @@ function destDbBuildDbPhp(array $config): string {
  * db.php generato automaticamente dall'applicazione CRUD.
  *
  * Generatore : Aggiornamento DB destinatario da schema.sql
- * Versione   : 2.2
+ * Versione   : 1.2
  * Creato il  : {$generatedAt}
  *
  * Funzione:
@@ -847,7 +847,7 @@ class Database {
         \$forceApply = \$targetTable !== '';
 
         \$updatePath = __DIR__ . DIRECTORY_SEPARATOR . self::UPDATE_FILE;
-        \$header = '-- File generato automaticamente da db.php v2.2' . PHP_EOL
+        \$header = '-- File generato automaticamente da db.php v1.2' . PHP_EOL
             . '-- App: ' . self::APP_NAME . PHP_EOL
             . '-- Creato il: ' . date('Y-m-d H:i:s') . PHP_EOL
             . '-- SHA-256 schema.sql: ' . \$hash . PHP_EOL . PHP_EOL;
@@ -1939,7 +1939,7 @@ if (!function_exists('deployTriggerRemoteDbSync')) {
             CURLOPT_TIMEOUT => 120,
             CURLOPT_SSL_VERIFYPEER => true,
             CURLOPT_SSL_VERIFYHOST => 2,
-            CURLOPT_USERAGENT => 'CRUD-HTTPS-Deploy-DB-Sync/4.4.3',
+            CURLOPT_USERAGENT => 'CRUD-HTTPS-Deploy-DB-Sync/1.4',
             CURLOPT_HTTPHEADER => ['Accept: text/plain, application/json, text/html;q=0.8'],
         ]);
 
@@ -2751,7 +2751,7 @@ if (!function_exists('deployHttpsRequest')) {
             CURLOPT_TIMEOUT => 180,
             CURLOPT_SSL_VERIFYPEER => true,
             CURLOPT_SSL_VERIFYHOST => 2,
-            CURLOPT_USERAGENT => 'CRUD-HTTPS-Deploy/3.0',
+            CURLOPT_USERAGENT => 'CRUD-HTTPS-Deploy/1.0',
         ]);
         $body = curl_exec($ch);
         $curlError = curl_error($ch);
@@ -3022,7 +3022,7 @@ if ($progetto_id) {
                         'deploy_path' => $deployPathForSync,
                         'project_uuid' => (string)($savedConfig['project_uuid'] ?? ''),
                         'project_name' => (string)$progetto_nome,
-                        'generator_version' => 'cartella_progetto_unico_v4.5.0',
+                        'generator_version' => 'cartella_progetto_unico_v1.5',
                         'application_url' => $applicationUrlForSync,
                         'sha256' => $syncArchive['sha256'],
                         'create_backup' => '0',
@@ -3150,7 +3150,7 @@ if ($progetto_id) {
                     [$progetto_id, $receiverUrl, $encryptedToken, $projectUuid, $deployPath, $applicationUrl, $createBackup, $keepBackups, $deleteMissing]
                 );
 
-                $generatorVersion = 'cartella_progetto_unico_v4.5.0';
+                $generatorVersion = 'cartella_progetto_unico_v1.5';
                 $message = '';
                 $lastSha256 = null;
 
@@ -3458,7 +3458,7 @@ if ($progetto_id) {
 
     /*
      * RILEVAZIONE AUTOMATICA STRUTTURA DB ALL'APERTURA PAGINA
-     * Versione routine: 1.0.0
+     * Versione routine: 1.0
      *
      * Evita chiamate ripetute impostando un intervallo minimo di 60 secondi
      * per progetto nella sessione corrente. Il pulsante manuale resta disponibile.

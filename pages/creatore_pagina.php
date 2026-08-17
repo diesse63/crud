@@ -1,11 +1,54 @@
 <?php
+const CREATORE_PAGINA_ERROR_LOG = __DIR__ . '/creatore_pagina_error.log';
+
+function creatorePaginaWriteErrorLog(string $message): void
+{
+    error_log(
+        '[' . date('Y-m-d H:i:s') . '] ' . $message . PHP_EOL,
+        3,
+        CREATORE_PAGINA_ERROR_LOG
+    );
+}
+
+$creatorePaginaRequestStartedAt = microtime(true);
+$creatorePaginaRequestedAction = (string) ($_GET['action'] ?? $_POST['action'] ?? 'pagina');
+
+if ($creatorePaginaRequestedAction !== 'pagina') {
+    creatorePaginaWriteErrorLog(
+        'INIZIO action=' . preg_replace('/[^a-zA-Z0-9_-]/', '', $creatorePaginaRequestedAction)
+    );
+
+    register_shutdown_function(static function () use (
+        $creatorePaginaRequestStartedAt,
+        $creatorePaginaRequestedAction
+    ): void {
+        $lastError = error_get_last();
+        if (!is_array($lastError)) {
+            return;
+        }
+
+        if (!in_array((int) ($lastError['type'] ?? 0), [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR], true)) {
+            return;
+        }
+
+        creatorePaginaWriteErrorLog(sprintf(
+            'FATALE action=%s durata=%.3fs errore=%s file=%s riga=%d',
+            preg_replace('/[^a-zA-Z0-9_-]/', '', $creatorePaginaRequestedAction),
+            microtime(true) - $creatorePaginaRequestStartedAt,
+            str_replace(["\r", "\n"], ' ', (string) ($lastError['message'] ?? 'Errore sconosciuto')),
+            (string) ($lastError['file'] ?? ''),
+            (int) ($lastError['line'] ?? 0)
+        ));
+    });
+}
+
 require_once __DIR__ . '/creatore_pagina_fk.php';
 require_once __DIR__ . '/creatore_pagina_ui.php';
 require_once __DIR__ . '/versioning.php';
 require_once __DIR__ . '/pannellate_core.php';
 /**
  * scheda_singola.php
- * Generatore Scheda Singola - versione 10.37
+ * Generatore Scheda Singola - versione 1.37
  *
  * Pagina interna dell'applicazione CRUD.
  * - Verifica schema.sql nella cartella del progetto attivo.
@@ -14,7 +57,7 @@ require_once __DIR__ . '/pannellate_core.php';
  * - Salva la configurazione nelle tabelle pagine_visualizzazione*.
  * - Genera una singola pagina PHP nella cartella /pages del progetto.
  *
- * AGGIORNAMENTI v10.3:
+ * AGGIORNAMENTI v1.3:
  * - layout responsive ottimizzato per smartphone;
  * - toolbar, ricerca, pulsanti e navigazione adattati al mobile;
  * - messaggi CRUD temporanei rimossi dai link di navigazione;
@@ -24,10 +67,10 @@ require_once __DIR__ . '/pannellate_core.php';
  *   di ogni pagina prodotta e mostrate tramite variabili sincronizzate;
  * - eliminazione di condizioni provvisorie e duplicazioni dei pulsanti.
  *
- * AGGIORNAMENTI v10.3:
+ * AGGIORNAMENTI v1.3:
  *
  *
- * AGGIORNAMENTI v10.4:
+ * AGGIORNAMENTI v1.4:
  * - in SCHEDA_SINGOLA con modale tabellare, la tabella collegata
  *   del modale non viene più inserita nella query principale;
  * - il record principale viene mostrato una sola volta;
@@ -39,20 +82,20 @@ require_once __DIR__ . '/pannellate_core.php';
  * - Viene incluso da index.php?page=scheda_singola.
  * - Bootstrap 5 e Bootstrap Icons sono caricati dal layout index.php.
  *
- * AGGIORNAMENTI v10.7:
+ * AGGIORNAMENTI v1.7:
  * - preservate le JOIN della scheda principale quando un campo della tabella
  *   collegata e' selezionato anche prima del salvataggio della pagina;
  * - il filtro anti-duplicazione della modale tabellare rimuove la relazione
  *   collegata solo quando non serve alla SELECT principale.
  *
- * AGGIORNAMENTI v10.8:
+ * AGGIORNAMENTI v1.8:
  * - confermata la disponibilita' dell'inserimento record collegato nel
  *   modale della scheda singola anche quando non esistono righe associate;
  * - il pulsante di apertura della scheda collegata mantiene il comportamento
  *   di inserimento rapido quando il modale non ha ancora record;
  * - allineata la versione del generatore alla scheda master detail.
  *
- * AGGIORNAMENTI v10.13:
+ * AGGIORNAMENTI v1.13:
  * - il campo "Nome pagina" compila automaticamente il nome file PHP e il
  *   titolo visualizzato al blur, solo se i campi sono ancora vuoti;
  * - se i campi sono già compilati non vengono sovrascritti.
@@ -60,17 +103,17 @@ require_once __DIR__ . '/pannellate_core.php';
  *   bloccato a 1 per le pagine di tipo singola (codice = singola).
  * - il valore di righe per pagina segue pagine_visualizzazione_tipo.righe_per_pagina.
  *
- * AGGIORNAMENTI v10.17:
+ * AGGIORNAMENTI v1.17:
  *
- * AGGIORNAMENTI v10.18:
+ * AGGIORNAMENTI v1.18:
  * - aggiunta la gestione inline del record collegato per i campi FK,
  *   con possibilità di inserimento e modifica senza uscire dalla pannellata;
  *
- * AGGIORNAMENTI v10.29:
+ * AGGIORNAMENTI v1.29:
  * - semplificato il caricamento della sezione "Tabelle collegate" per
  *   renderlo stabile sia in apertura modifica sia nel cambio tabella;
  *
- * AGGIORNAMENTI v10.32:
+ * AGGIORNAMENTI v1.32:
  * - aggiunta nel file destinatario la versione pagina visibile nella
  *   testata della scheda singola, insieme ai pulsanti di navigazione già
  *   previsti dalla configurazione;
@@ -78,71 +121,71 @@ require_once __DIR__ . '/pannellate_core.php';
  *   dedicata, mantenendo la logica di costruzione basata sulle opzioni lette
  *   e il salvataggio nella cartella progetto.
  *
- * AGGIORNAMENTI v10.33:
+ * AGGIORNAMENTI v1.33:
  * - reso dinamico il titolo del pannello report per distinguere il riepilogo
  *   di caricamento configurazione dalla voce usata nella modalità modifica.
  *
- * AGGIORNAMENTI v10.34:
+ * AGGIORNAMENTI v1.34:
  * - campi CRUD limitati ai campi della SELECT e alle sole FK usate dalle JOIN;
  * - corretta la generazione degli elenchi FK e dei moduli inserimento/modifica.
  *
- * AGGIORNAMENTI v10.35:
+ * AGGIORNAMENTI v1.35:
  * - ordine dei controlli CRUD identico all'ordine dei campi nella SELECT;
  * - campi JOIN trasformati in dropdown sulla FK principale con descrizione SQL.
  *
- * AGGIORNAMENTI v10.36:
+ * AGGIORNAMENTI v1.36:
  * - corretto il nome della tabella principale nella configurazione CRUD;
  * - ripristinata l'editabilità dei campi mostrati nei modali.
  *
- * AGGIORNAMENTI v10.37:
+ * AGGIORNAMENTI v1.37:
  * - ricerca estesa a tutti i campi della SELECT prima della paginazione;
  * - navigazione della scheda allineata in basso a destra;
  * - layout CSS dei modali uniforme alla pannellata principale.
  *
- * AGGIORNAMENTI v10.28:
+ * AGGIORNAMENTI v1.28:
  * - introdotta una cache HTML dedicata per la sezione "Tabelle collegate"
  *   così il contenuto caricato in modifica non viene più perso;
  *
- * AGGIORNAMENTI v10.27:
+ * AGGIORNAMENTI v1.27:
  * - separato lo stato delle tabelle salvate da quello della tabella
  *   principale, per mantenere coerente il caricamento della sezione 3 in
  *   modifica;
  *
- * AGGIORNAMENTI v10.26:
+ * AGGIORNAMENTI v1.26:
  * - ripristinato il rendering completo della sezione "Tabelle collegate"
  *   in caricamento modifica, con checkbox e selezione join visibili subito;
  *
- * AGGIORNAMENTI v10.25:
+ * AGGIORNAMENTI v1.25:
  * - allineata la visualizzazione dei campi collegati alle sole tabelle
  *   effettivamente selezionate in modifica;
  *
- * AGGIORNAMENTI v10.24:
+ * AGGIORNAMENTI v1.24:
  * - agganciato il flag `selezionata` delle tabelle collegate al caricamento
  *   in modifica per rendere affidabile la ricostruzione della selezione;
  *
- * AGGIORNAMENTI v10.23:
+ * AGGIORNAMENTI v1.23:
  * - corretto l'ordine di caricamento in modifica per mantenere selezione
  *   e visualizzazione delle tabelle collegate durante l'apertura da tabella
  *   pannellate;
  *
- * AGGIORNAMENTI v10.22:
+ * AGGIORNAMENTI v1.22:
  * - corretto il caricamento da tabella pannellate per mantenere selezione
  *   e visualizzazione coerenti delle tabelle collegate;
  *
- * AGGIORNAMENTI v10.21:
+ * AGGIORNAMENTI v1.21:
  * - allineati i contatori di versione del creatore pagina e della pagina
  *   generata al progressivo degli interventi eseguiti;
  *
- * AGGIORNAMENTI v10.20:
+ * AGGIORNAMENTI v1.20:
  * - aggiunta nella pannellata la versione del creatore di pagina utilizzato
  *   e la versione pagina nel formato semantico 1.1;
  *
- * AGGIORNAMENTI v10.19:
+ * AGGIORNAMENTI v1.19:
  * - resa richiudibile la lista dei "Campi da visualizzare" con freccia;
  * - allineati i valori iniziali dei campi alla tipologia del campo.
  *
- * AGGIORNAMENTI v10.16:
- * AGGIORNAMENTI v10.14:
+ * AGGIORNAMENTI v1.16:
+ * AGGIORNAMENTI v1.14:
  * - ripristinato il trascinamento dei campi disponibili e dei campi
  *   selezionati nella sezione 4;
  * - ripristinata la selezione con doppio click dei campi disponibili;
@@ -158,9 +201,9 @@ require_once __DIR__ . '/../db.php';
 $initialConfigurationId = isset($_GET['configuration_id']) ? max(0, (int) $_GET['configuration_id']) : 0;
 $saveErrorContext = [];
 
-const SCHEDA_SINGOLA_GENERATOR_VERSION = '10.37';
-const SCHEDA_TABELLARE_GENERATOR_VERSION = '10.10';
-const MASTER_DETAIL_GENERATOR_VERSION = '10.8';
+const SCHEDA_SINGOLA_GENERATOR_VERSION = '1.37';
+const SCHEDA_TABELLARE_GENERATOR_VERSION = '1.10';
+const MASTER_DETAIL_GENERATOR_VERSION = '1.8';
 const GENERATED_PAGE_VERSION = '1.0';
 
 $progettoId   = isset($_SESSION['progetto_id']) ? (int) $_SESSION['progetto_id'] : 0;
@@ -573,8 +616,8 @@ function buildSqlPreview(
                 'visible_modal' => !empty($selectedField['visible_modal']),
                 'searchable' => !empty($selectedField['searchable']),
                 'sortable' => !empty($selectedField['sortable']),
-                'format' => (string) ($selectedField['format'] ?? ($expressionType === 'FORMULA' ? 'NUMERO' : 'TESTO')),
-                'alignment' => (string) ($selectedField['alignment'] ?? ($expressionType === 'FORMULA' ? 'DESTRA' : 'SINISTRA')),
+                'format' => trim((string) ($selectedField['format'] ?? '')),
+                'alignment' => normalizeVisualAlignmentCode((string) ($selectedField['alignment'] ?? ($expressionType === 'FORMULA' ? 'DESTRA' : 'SINISTRA'))),
                 'width' => trim((string) ($selectedField['width'] ?? '')),
                 'bootstrap_col' => in_array((string) ($selectedField['bootstrap_col'] ?? '6'), ['3','4','6','8','12'], true)
                     ? (string) $selectedField['bootstrap_col'] : '6',
@@ -635,8 +678,12 @@ function buildSqlPreview(
             'visible_modal' => !empty($selectedField['visible_modal']),
             'searchable' => !empty($selectedField['searchable']),
             'sortable' => !empty($selectedField['sortable']),
-            'format' => (string) ($selectedField['format'] ?? 'AUTOMATICO'),
-            'alignment' => (string) ($selectedField['alignment'] ?? 'SINISTRA'),
+            'format' => trim((string) ($selectedField['format'] ?? $selectedField['formato_visualizzazione'] ?? '')),
+            'alignment' => normalizeVisualAlignmentCode(
+                (($alignmentValue = trim((string) ($selectedField['alignment'] ?? $selectedField['allineamento'] ?? ''))) !== '')
+                    ? $alignmentValue
+                    : 'SINISTRA'
+            ),
             'width' => trim((string) ($selectedField['width'] ?? '')),
             'bootstrap_col' => in_array((string) ($selectedField['bootstrap_col'] ?? '6'), ['3','4','6','8','12'], true)
                 ? (string) $selectedField['bootstrap_col'] : '6',
@@ -836,6 +883,9 @@ function buildCrudConfiguration(
             'fk' => $selectedMeta['fk'] ?? $field['fk'] ?? $foreignKeys[$fieldName] ?? null,
             'type' => (string) ($field['tipo'] ?? $field['type'] ?? ''),
             'default_value' => $field['default_value'] ?? null,
+            'bootstrap_col' => in_array((string) ($selectedMeta['bootstrap_col'] ?? $selectedMeta['bootstrapCol'] ?? '6'), ['3','4','6','8','12'], true)
+                ? (string) ($selectedMeta['bootstrap_col'] ?? $selectedMeta['bootstrapCol'] ?? '6')
+                : '6',
         ];
     }
 
@@ -893,19 +943,32 @@ function normalizeViewTypeCode(string $value): string
 
 function normalizeVisualFormatCode(string $value): string
 {
-    $value = strtoupper(trim($value));
+    $value = trim($value);
+    if ($value === '') {
+        return '';
+    }
 
-    return match ($value) {
-        'NUMERO_0', 'NUMERO_1', 'NUMERO_2', 'NUMERO_3', 'NUMERO', 'IMPORTO' => 'NUMERO',
-        'DATA_GGMMAAAA', 'DATA_AAAA_MM_GG', 'DATA' => 'DATA',
-        'DATA_ORA_GGMMAAAA', 'DATA_ORA_AAAA_MM_GG', 'DATA_ORA' => 'DATA_ORA',
-        'ORA' => 'ORA',
-        'BOOLEANO' => 'BOOLEANO',
-        'JSON' => 'JSON',
-        'TESTO' => 'TESTO',
-        'AUTOMATICO' => 'AUTOMATICO',
-        default => 'AUTOMATICO',
+    return $value;
+}
+
+function defaultVisualFormatByType(string $type): string
+{
+    $type = strtolower(trim($type));
+
+    return match ($type) {
+        'decimal', 'float', 'double' => '#.##0,00',
+        'int', 'tinyint', 'smallint', 'mediumint', 'bigint' => '#.##0',
+        'date' => 'dd/mm/aaaa',
+        'datetime', 'timestamp' => 'dd/mm/aaaa hh:mm',
+        'time' => 'hh:mm',
+        default => '',
     };
+}
+
+function normalizeVisualAlignmentCode(string $value): string
+{
+    $value = strtoupper(trim($value));
+    return in_array($value, ['SINISTRA', 'CENTRO', 'DESTRA'], true) ? $value : 'SINISTRA';
 }
 
 function writeGeneratedPageToProjectFolder(string $targetPath, string $generatedCode): void
@@ -926,1558 +989,81 @@ function writeGeneratedPageToProjectFolder(string $targetPath, string $generated
     }
 }
 
-function resolveNextGeneratedPageVersion(string $targetPath, string $defaultVersion = '1.0'): string
+function repairGeneratedDisplayValueBlock(string $generatedCode): string
 {
-    $defaultVersion = crudVersionNormalize(trim($defaultVersion) !== '' ? trim($defaultVersion) : '1.0');
-    $version = $defaultVersion;
-
-    if (is_file($targetPath) && is_readable($targetPath)) {
-        $content = @file_get_contents($targetPath);
-        if ($content !== false) {
-            if (preg_match('/^\s*\*\s*Versione pagina\s*:\s*([0-9]+\.[0-9]+)/mi', $content, $matches)) {
-                $version = crudVersionNormalize((string) $matches[1], $defaultVersion);
-            } elseif (preg_match('/\$generatedPageVersion\s*=\s*[\'"]([0-9]+\.[0-9]+)[\'"];/i', $content, $matches)) {
-                $version = crudVersionNormalize((string) $matches[1], $defaultVersion);
-            }
-        }
-    }
-
-    return crudVersionIncrement($version, $defaultVersion);
+    return $generatedCode;
 }
 
 function buildGeneratedPageCode(array $configuration): string
 {
-    $title = var_export($configuration['title'], true);
-    $sql = var_export($configuration['sql'], true);
-    $type = var_export($configuration['view_type'], true);
-    $rowsPerPage = max(1, (int) $configuration['rows_per_page']);
-    $searchEnabled = $configuration['search_enabled'] ? 'true' : 'false';
-    $sortEnabled = $configuration['sort_enabled'] ? 'true' : 'false';
-    $paginationEnabled = $configuration['pagination_enabled'] ? 'true' : 'false';
-    $fieldsExport = var_export($configuration['fields'], true);
-    $crudConfigExport = var_export($configuration['crud_config'] ?? [], true);
-    $crudEnabled = !empty($configuration['crud_enabled']) ? 'true' : 'false';
-    $crudAdd = !empty($configuration['crud_add']) ? 'true' : 'false';
-    $crudEdit = !empty($configuration['crud_edit']) ? 'true' : 'false';
-    $crudDelete = !empty($configuration['crud_delete']) ? 'true' : 'false';
-    $generatorMeta = resolveGeneratedPageMetadata((string) ($configuration['view_type'] ?? 'SCHEDA_SINGOLA'));
-    $generatorVersion = $generatorMeta['version'];
-    $generatorLabel = $generatorMeta['label'];
-    $generatorSource = $generatorMeta['source'];
-    $generatedAt = date('Y-m-d H:i:s');
-    $generatedPageVersion = (string) ($configuration['generated_page_version'] ?? GENERATED_PAGE_VERSION);
-
-    $dropdownCode = '';
-
-    $singleCardModalPhp = generatedSingleCardModalPhp();
-    $tableRowCardModalPhp = generatedTableRowCardModalPhp();
-
-    return <<<PHP
-<?php
-/**
- * ============================================================
- * File generato automaticamente dall'applicazione CRUD.
- *
- * Generatore : {$generatorLabel}
- * Versione creatore : {$generatorVersion}
- * Versione pagina   : {$generatedPageVersion}
- * Creato il  : {$generatedAt}
- * Modificato il: {$generatedAt}
- *
- * ATTENZIONE:
- * questo file è generato automaticamente; eventuali modifiche
- * manuali possono essere sovrascritte alla successiva generazione.
- * ============================================================
- */
-
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
-
-require_once dirname(__DIR__) . '/db.php';
-
-\$generatedBy = '{$generatorLabel}';
-\$generatedVersion = '{$generatorVersion}';
-\$generatedPageVersion = '{$generatedPageVersion}';
-\$generatedAt = '{$generatedAt}';
-
-/*
- * La pagina può essere:
- * - inclusa dall'index.php generato;
- * - aperta direttamente dalla cartella /pages.
- *
- * db.php può creare già \$db oppure dichiarare soltanto la classe Database.
- * Il controllo evita sia variabili non definite sia doppie connessioni.
- */
-try {
-    if (!isset(\$db) || !(\$db instanceof Database)) {
-        \$db = new Database();
-    }
-} catch (Throwable \$databaseError) {
-    error_log(
-        'Errore database pagina CRUD ' . basename(__FILE__) . ': '
-        . \$databaseError->getMessage()
-    );
-
-    http_response_code(500);
-
-    echo '<div class="alert alert-danger m-3">'
-        . '<strong>Errore di connessione al database.</strong><br>'
-        . 'Controllare il file <code>db.php</code> e i parametri di connessione.'
-        . '</div>';
-
-    return;
-}
-
-\$pageTitle = {$title};
-\$viewType = {$type};
-\$baseSql = {$sql};
-\$fields = {$fieldsExport};
-\$rowsPerPage = \$viewType === 'SCHEDA_SINGOLA' ? 1 : {$rowsPerPage};
-\$searchEnabled = {$searchEnabled};
-\$sortEnabled = {$sortEnabled};
-\$paginationEnabled = {$paginationEnabled};
-\$modalEnabled = false;
-\$modalConfig = null;
-\$modalCrudConfig = [];
-\$crudConfig = {$crudConfigExport};
-\$crudEnabled = {$crudEnabled} && !empty(\$crudConfig['available']);
-\$crudAdd = {$crudAdd};
-\$crudEdit = {$crudEdit};
-\$crudDelete = {$crudDelete};
-
-\$hasModalDetail = false;
-\$modalCrudEnabled = false;
-\$modalCrudAdd = false;
-\$modalCrudEdit = false;
-\$modalCrudDelete = false;
-\$modalVisibleFields = [];
-\$modalCrudEffectiveConfig = [];
-
-\$hasExternalNavigation = false;
-foreach (\$fields as \$navigationField) {
-    if (
-        trim((string) (\$navigationField['link_target_file'] ?? '')) !== ''
-        && trim((string) (\$navigationField['link_parameter'] ?? '')) !== ''
-        && trim((string) (\$navigationField['link_value_alias'] ?? '')) !== ''
-    ) {
-        \$hasExternalNavigation = true;
-        break;
-    }
-}
-
-if (!isset(\$_SESSION['generated_crud_csrf'])) {
-    \$_SESSION['generated_crud_csrf'] = bin2hex(random_bytes(24));
-}
-\$crudCsrf = \$_SESSION['generated_crud_csrf'];
-\$crudMessage = '';
-\$crudError = '';
-\$crudEditRecord = null;
-\$modalCrudEditRecord = null;
-\$crudDropdowns = [];
-{$dropdownCode}
-\$modalCrudDropdowns = [];
-\$insertModalDropdowns = [];
-\$primaryKeyAlias = (string) (\$crudConfig['primary_key_alias'] ?? '');
-\$primaryKeyFieldName = (string) (\$crudConfig['primary_key']['field_name'] ?? '');
-
-function crudQuote(string \$identifier): string
-{
-    return '`' . str_replace('`', '``', \$identifier) . '`';
-}
-
-function crudBuildDropdownOptions(Database \$db, array \$field): array
-{
-    if (empty(\$field['fk']) || !is_array(\$field['fk'])) {
-        return [];
+    if (function_exists('buildGeneratedPageCodeFromCanonicalTemplate')) {
+        return buildGeneratedPageCodeFromCanonicalTemplate($configuration);
     }
 
-    \$fk = \$field['fk'];
-    \$referencedTable = trim((string) (\$fk['referenced_table_name'] ?? ''));
-    \$referencedField = trim((string) (\$fk['referenced_field_name'] ?? ''));
-    \$descriptionField = trim((string) (\$fk['description_field_name'] ?? ''));
-
-    if (\$referencedTable === '' || \$referencedField === '' || \$descriptionField === '') {
-        return [];
+    $templatePath = __DIR__ . '/genera_pagina_visualizzazione.php';
+    $source = @file_get_contents($templatePath);
+    if (!is_string($source) || $source === '') {
+        throw new RuntimeException('Impossibile leggere il template canonico della pagina generata.');
     }
 
-    \$optionSql =
-        'SELECT ' . crudQuote(\$referencedField) . ' AS option_value, '
-        . crudQuote(\$descriptionField) . ' AS option_label '
-        . 'FROM ' . crudQuote(\$referencedTable) . ' '
-        . 'ORDER BY ' . crudQuote(\$descriptionField);
-
-    return \$db->fetchAll(\$optionSql);
-}
-
-function crudNormalizeValue(array \$field, mixed \$value): mixed
-{
-    if (is_string(\$value)) {
-        \$value = trim(\$value);
+    $signature = 'function generatePagePhp(array $configuration): string';
+    $signatureOffset = strpos($source, $signature);
+    if ($signatureOffset === false) {
+        throw new RuntimeException('Funzione di generazione non trovata nel template canonico.');
     }
 
-    if (\$value === '' && !empty(\$field['nullable'])) {
-        return null;
+    $openingBrace = strpos($source, '{', $signatureOffset + strlen($signature));
+    if ($openingBrace === false) {
+        throw new RuntimeException('Blocco della funzione di generazione non valido.');
     }
 
-    if (\$value === '') {
-        return '';
-    }
-
-    \$fieldType = strtolower((string) (\$field['field_type'] ?? \$field['type'] ?? 'text'));
-
-    return match (\$fieldType) {
-        'int', 'tinyint', 'smallint', 'mediumint', 'bigint' => (int) \$value,
-        'float', 'double', 'decimal' => (float) str_replace(',', '.', (string) \$value),
-        default => \$value,
-    };
-}
-
-function renderInsertModalField(array \$field, array \$dropdowns): void
-{
-    \$insertField = \$field;
-    \$insertField['editable'] = true;
-    renderCrudField(\$insertField, null, \$dropdowns);
-}
-
-function crudRedirectUrl(string \$messageCode): string
-{
-    \$query = \$_GET;
-    unset(
-        \$query['crud_message'],
-        \$query['edit'],
-        \$query['modal_edit'],
-        \$query['record']
-    );
-
-    \$query['crud_message'] = \$messageCode;
-
-    return '?' . http_build_query(\$query);
-}
-
-function renderCrudField(array \$field, mixed \$value, array \$dropdowns): void
-{
-    \$fieldName = (string) (\$field['field_name'] ?? '');
-    \$fieldLabel = trim((string) (\$field['label'] ?? '')) !== ''
-        ? (string) \$field['label']
-        : \$fieldName;
-    \$fieldType = strtolower((string) (\$field['field_type'] ?? \$field['type'] ?? 'text'));
-    \$isRequired = !empty(\$field['required']);
-    \$isReadOnly = empty(\$field['editable']);
-    \$currentValue = is_scalar(\$value) || \$value === null ? (string) (\$value ?? '') : '';
-    \$controlId = 'crud_' . preg_replace('/[^a-zA-Z0-9_]+/', '_', \$fieldName);
-    \$nameAttr = 'fields[' . \$fieldName . ']';
-
-    echo '<label for="' . htmlspecialchars(\$controlId, ENT_QUOTES, 'UTF-8') . '" class="form-label">'
-        . htmlspecialchars(\$fieldLabel, ENT_QUOTES, 'UTF-8');
-    if (\$isRequired) {
-        echo ' <span class="text-danger">*</span>';
-    }
-    echo '</label>';
-
-    if (isset(\$dropdowns[\$fieldName]) && is_array(\$dropdowns[\$fieldName])) {
-        echo sprintf(
-            '<select class="form-select" id="%s" name="%s"%s%s>',
-            htmlspecialchars(\$controlId, ENT_QUOTES, 'UTF-8'),
-            htmlspecialchars(\$nameAttr, ENT_QUOTES, 'UTF-8'),
-            \$isReadOnly ? ' disabled' : '',
-            \$isRequired ? ' required' : ''
-        );
-        echo '<option value="">Selezionare...</option>';
-        foreach (\$dropdowns[\$fieldName] as \$option) {
-            \$optionValue = (string) (\$option['option_value'] ?? '');
-            \$optionLabel = (string) (\$option['option_label'] ?? \$optionValue);
-            \$selected = ((string) \$currentValue === \$optionValue) ? ' selected' : '';
-            echo '<option value="' . htmlspecialchars(\$optionValue, ENT_QUOTES, 'UTF-8') . '"' . \$selected . '>'
-                . htmlspecialchars(\$optionLabel, ENT_QUOTES, 'UTF-8')
-                . '</option>';
-        }
-        echo '</select>';
-        return;
-    }
-
-    if (in_array(\$fieldType, ['text', 'varchar', 'char', 'tinytext', 'mediumtext', 'longtext'], true)) {
-        echo sprintf(
-            '<input type="text" class="form-control" id="%s" name="%s" value="%s"%s%s>',
-            htmlspecialchars(\$controlId, ENT_QUOTES, 'UTF-8'),
-            htmlspecialchars(\$nameAttr, ENT_QUOTES, 'UTF-8'),
-            htmlspecialchars(\$currentValue, ENT_QUOTES, 'UTF-8'),
-            \$isReadOnly ? ' readonly' : '',
-            \$isRequired ? ' required' : ''
-        );
-        return;
-    }
-
-    if (in_array(\$fieldType, ['int', 'tinyint', 'smallint', 'mediumint', 'bigint', 'decimal', 'float', 'double'], true)) {
-        echo sprintf(
-            '<input type="number" class="form-control" id="%s" name="%s" value="%s"%s%s>',
-            htmlspecialchars(\$controlId, ENT_QUOTES, 'UTF-8'),
-            htmlspecialchars(\$nameAttr, ENT_QUOTES, 'UTF-8'),
-            htmlspecialchars(\$currentValue, ENT_QUOTES, 'UTF-8'),
-            \$isReadOnly ? ' readonly' : '',
-            \$isRequired ? ' required' : ''
-        );
-        return;
-    }
-
-    if (in_array(\$fieldType, ['date'], true)) {
-        echo sprintf(
-            '<input type="date" class="form-control" id="%s" name="%s" value="%s"%s%s>',
-            htmlspecialchars(\$controlId, ENT_QUOTES, 'UTF-8'),
-            htmlspecialchars(\$nameAttr, ENT_QUOTES, 'UTF-8'),
-            htmlspecialchars(\$currentValue, ENT_QUOTES, 'UTF-8'),
-            \$isReadOnly ? ' readonly' : '',
-            \$isRequired ? ' required' : ''
-        );
-        return;
-    }
-
-    if (in_array(\$fieldType, ['datetime', 'timestamp'], true)) {
-        echo sprintf(
-            '<input type="datetime-local" class="form-control" id="%s" name="%s" value="%s"%s%s>',
-            htmlspecialchars(\$controlId, ENT_QUOTES, 'UTF-8'),
-            htmlspecialchars(\$nameAttr, ENT_QUOTES, 'UTF-8'),
-            htmlspecialchars(\$currentValue, ENT_QUOTES, 'UTF-8'),
-            \$isReadOnly ? ' readonly' : '',
-            \$isRequired ? ' required' : ''
-        );
-        return;
-    }
-
-    echo sprintf(
-        '<textarea class="form-control" id="%s" name="%s" rows="3"%s%s>%s</textarea>',
-        htmlspecialchars(\$controlId, ENT_QUOTES, 'UTF-8'),
-        htmlspecialchars(\$nameAttr, ENT_QUOTES, 'UTF-8'),
-        \$isReadOnly ? ' readonly' : '',
-        \$isRequired ? ' required' : '',
-        htmlspecialchars(\$currentValue, ENT_QUOTES, 'UTF-8')
-    );
-}
-
-function creatorePaginaLoadTableColumns(Database \$db, string \$tableName): array
-{
-    try {
-        return \$db->fetchAll('SHOW FULL COLUMNS FROM ' . crudQuote(\$tableName));
-    } catch (Throwable \$primaryError) {
-        try {
-            return \$db->fetchAll(
-                'SELECT
-                    COLUMN_NAME AS Field,
-                    COLUMN_TYPE AS Type,
-                    IS_NULLABLE AS `Null`,
-                    COLUMN_DEFAULT AS `Default`,
-                    EXTRA AS Extra
-                 FROM information_schema.COLUMNS
-                 WHERE TABLE_SCHEMA = DATABASE()
-                   AND TABLE_NAME = ?
-                 ORDER BY ORDINAL_POSITION',
-                [\$tableName]
-            );
-        } catch (Throwable \$fallbackError) {
-            throw new RuntimeException(
-                'Impossibile leggere la struttura della tabella collegata: ' . \$fallbackError->getMessage(),
-                0,
-                \$primaryError
-            );
-        }
-    }
-}
-
-if (\$crudEnabled) {
-    foreach (\$crudConfig['fields'] as \$crudField) {
-        if (empty(\$crudField['editable'])) continue;
-        \$options = crudBuildDropdownOptions(\$db, \$crudField);
-        if (!\$options) continue;
-        \$crudDropdowns[\$crudField['field_name']] = \$options;
-    }
-
-    \$ajaxCrudAction = null;
-    if (isset(\$_GET['crud_action'])) {
-        \$ajaxCrudAction = (string) \$_GET['crud_action'];
-    }
-    if (\$ajaxCrudAction !== null && \$ajaxCrudAction !== '' && in_array(\$ajaxCrudAction, array('related_schema', 'related_record'), true)) {
-        try {
-            \$crudAction = \$ajaxCrudAction;
-            \$fkTable = normalizeRelatedTableName((string) (\$_GET['fk_table'] ?? ''));
-            \$relatedValue = trim((string) (\$_GET['fk_value'] ?? ''));
-            \$fkValueField = trim((string) (\$_GET['fk_value_field'] ?? ''));
-
-            creatorePaginaRenderRelatedSchemaPayload(
-                \$db,
-                \$crudCsrf,
-                \$fkTable,
-                \$crudAction,
-                \$relatedValue,
-                \$fkValueField
-            );
-        } catch (Throwable \$exception) {
-            pannellateJsonResponse([
-                'ok' => false,
-                'message' => \$exception->getMessage(),
-            ], 400);
-        }
-    }
-
-    if (\$_SERVER['REQUEST_METHOD'] === 'POST' && isset(\$_POST['crud_action'])) {
-        try {
-            \$crudAction = (string) \$_POST['crud_action'];
-
-            if (in_array(\$crudAction, array('insert_related', 'update_related'), true)) {
-                creatorePaginaHandleRelatedCrudPost(
-                    \$db,
-                    \$crudCsrf,
-                    \$crudAction,
-                    \$crudConfig,
-                    \$modalCrudConfig,
-                    \$modalConfig,
-                    \$modalCrudAdd,
-                    \$modalCrudEdit,
-                    \$modalCrudDelete,
-                    \$crudAction,
-                    is_array(\$_POST['crud'] ?? null) ? \$_POST['crud'] : []
-                );
-            }
-
-            if (!hash_equals(\$crudCsrf, (string) (\$_POST['csrf'] ?? ''))) {
-                throw new RuntimeException('Sessione scaduta. Ricaricare la pagina.');
-            }
-
-            \$tableName = (string) \$crudConfig['table_name'];
-            \$pkName = (string) \$crudConfig['primary_key']['field_name'];
-            \$posted = is_array(\$_POST['fields'] ?? null) ? \$_POST['fields'] : [];
-
-            if (\$crudAction === 'delete') {
-                if (!\$crudDelete) {
-                    throw new RuntimeException('Cancellazione non abilitata.');
-                }
-
-                \$pkValue = \$_POST['pk_value'] ?? (\$_GET['edit'] ?? (\$_GET['modal_edit'] ?? null));
-                if (\$pkValue === null || \$pkValue === '') {
-                    throw new RuntimeException('Chiave del record non valida.');
-                }
-
-                \$db->execute(
-                    'DELETE FROM ' . crudQuote(\$tableName)
-                    . ' WHERE ' . crudQuote(\$pkName) . ' = ?',
-                    [\$pkValue]
-                );
-
-                header('Location: ' . crudRedirectUrl('deleted'));
-                exit;
-            }
-
-            \$columns = [];
-            \$values = [];
-            foreach (\$crudConfig['fields'] as \$field) {
-                if (empty(\$field['editable'])) continue;
-
-                \$fieldName = (string) \$field['field_name'];
-                \$fieldLabel = trim((string) (\$field['label'] ?? '')) !== ''
-                    ? (string) \$field['label']
-                    : \$fieldName;
-
-                if (!array_key_exists(\$fieldName, \$posted)) {
-                    if (!empty(\$field['required'])) {
-                        throw new RuntimeException('Compilare il campo ' . \$fieldLabel . '.');
-                    }
-                    continue;
-                }
-
-                \$value = crudNormalizeValue(\$field, \$posted[\$fieldName]);
-                if (!empty(\$field['required']) && (\$value === '' || \$value === null)) {
-                    throw new RuntimeException('Compilare il campo ' . \$fieldLabel . '.');
-                }
-
-                if (\$crudAction === 'insert' && \$fieldName === \$primaryKeyFieldName) {
-                    continue;
-                }
-
-                \$columns[] = \$fieldName;
-                \$values[] = \$value;
-            }
-
-            if (\$crudAction === 'insert') {
-                if (!\$crudAdd) {
-                    throw new RuntimeException('Inserimento non abilitato.');
-                }
-                if (!\$columns) {
-                    throw new RuntimeException('Nessun campo inseribile.');
-                }
-
-                \$sqlInsert =
-                    'INSERT INTO ' . crudQuote(\$tableName)
-                    . ' (' . implode(', ', array_map('crudQuote', \$columns)) . ')'
-                    . ' VALUES (' . implode(', ', array_fill(0, count(\$columns), '?')) . ')';
-
-                \$db->execute(\$sqlInsert, \$values);
-                header('Location: ' . crudRedirectUrl('inserted'));
-                exit;
-            }
-
-            if (\$crudAction === 'update') {
-                if (!\$crudEdit) {
-                    throw new RuntimeException('Modifica non abilitata.');
-                }
-
-                \$pkValue = \$_POST['pk_value'] ?? null;
-                if (\$pkValue === null || \$pkValue === '') {
-                    throw new RuntimeException('Chiave del record non valida.');
-                }
-
-                if (!\$columns) {
-                    throw new RuntimeException('Nessun campo modificabile selezionato.');
-                }
-
-                \$sets = array_map(
-                    fn(string \$column): string => crudQuote(\$column) . ' = ?',
-                    \$columns
-                );
-
-                \$db->execute(
-                    'UPDATE ' . crudQuote(\$tableName)
-                    . ' SET ' . implode(', ', \$sets)
-                    . ' WHERE ' . crudQuote(\$pkName) . ' = ?',
-                    [...\$values, \$pkValue]
-                );
-
-                header('Location: ' . crudRedirectUrl('updated'));
-                exit;
-            }
-    } catch (Throwable \$crudException) {
-        \$crudError = \$crudException->getMessage();
-    }
-}
-
-\$editId = \$_GET['edit'] ?? (\$_GET['modal_edit'] ?? null);
-    if (\$crudEdit && \$editId !== null && \$editId !== '') {
-        \$crudEditRecord = \$db->fetch(
-            'SELECT * FROM ' . crudQuote((string) \$crudConfig['table_name'])
-            . ' WHERE ' . crudQuote((string) \$crudConfig['primary_key']['field_name']) . ' = ?',
-            [\$editId]
-        ) ?: null;
-    }
-
-    \$messageCode = (string) (\$_GET['crud_message'] ?? '');
-    \$crudMessage = match (\$messageCode) {
-        'inserted' => 'Record inserito correttamente.',
-        'updated' => 'Record modificato correttamente.',
-        'deleted' => 'Record cancellato correttamente.',
-        default => '',
-    };
-}
-
-\$page = max(1, (int) (\$_GET['p'] ?? 1));
-\$search = trim((string) (\$_GET['q'] ?? ''));
-\$sort = trim((string) (\$_GET['sort'] ?? ''));
-\$direction = strtoupper((string) (\$_GET['dir'] ?? 'ASC')) === 'DESC' ? 'DESC' : 'ASC';
-\$advancedFilters = is_array(\$_GET['f'] ?? null) ? \$_GET['f'] : [];
-\$navigateRecord = \$_GET['record'] ?? null;
-
-\$visibleFields = array_values(array_filter(
-    \$fields,
-    fn(array \$field): bool => !empty(\$field['visible_table'])
-));
-
-\$searchableAliases = [];
-\$sortableAliases = [];
-foreach (\$fields as \$field) {
-    \$searchAlias = trim((string) (\$field['output_alias'] ?? ''));
-    if (\$searchAlias !== '') \$searchableAliases[] = \$searchAlias;
-    if (!empty(\$field['sortable'])) {
-        \$sortableAliases[\$field['output_alias']] = true;
-    }
-}
-
-if (\$modalCrudEnabled) {
-    foreach (\$modalCrudEffectiveConfig['fields'] as \$crudField) {
-        \$options = crudBuildDropdownOptions(\$db, \$crudField);
-        if (!\$options) continue;
-        \$modalCrudDropdowns[\$crudField['field_name']] = \$options;
-    }
-
-    if (\$_SERVER['REQUEST_METHOD'] === 'POST' && isset(\$_POST['modal_crud_action'])) {
-        try {
-            if (!hash_equals(\$crudCsrf, (string) (\$_POST['csrf'] ?? ''))) {
-                throw new RuntimeException('Sessione scaduta. Ricaricare la pagina.');
-            }
-
-            \$action = (string) \$_POST['modal_crud_action'];
-            \$tableName = (string) \$modalCrudEffectiveConfig['table_name'];
-            \$pkName = (string) \$modalCrudEffectiveConfig['primary_key']['field_name'];
-            \$linkedFieldName = (string) \$modalConfig['linked_field_name'];
-            \$posted = is_array(\$_POST['fields'] ?? null) ? \$_POST['fields'] : [];
-
-            if (\$action === 'delete') {
-                if (!\$modalCrudDelete) {
-                    throw new RuntimeException('Cancellazione non abilitata.');
-                }
-
-                \$pkValue = \$_POST['pk_value'] ?? null;
-                if (\$pkValue === null || \$pkValue === '') {
-                    throw new RuntimeException('Chiave del record collegato non valida.');
-                }
-
-                \$db->execute(
-                    'DELETE FROM ' . crudQuote(\$tableName)
-                    . ' WHERE ' . crudQuote(\$pkName) . ' = ?',
-                    [\$pkValue]
-                );
-
-                header('Location: ' . crudRedirectUrl('deleted'));
-                exit;
-            }
-
-            \$columns = [];
-            \$values = [];
-            foreach (\$modalCrudEffectiveConfig['fields'] as \$field) {
-                if (empty(\$field['editable'])) continue;
-
-                \$fieldName = (string) \$field['field_name'];
-                if (\$action === 'insert' && \$fieldName === \$linkedFieldName) {
-                    \$posted[\$fieldName] = \$_POST['modal_parent_value'] ?? null;
-                }
-                if (\$action === 'update' && \$fieldName === \$linkedFieldName) {
-                    continue;
-                }
-
-                \$fieldAllowed = !empty(\$field['editable']);
-
-                if (!\$fieldAllowed) continue;
-
-                if (!array_key_exists(\$fieldName, \$posted)) {
-                    if (!empty(\$field['required'])) {
-                        throw new RuntimeException('Campo obbligatorio mancante: ' . \$field['label']);
-                    }
-                    continue;
-                }
-
-                \$value = crudNormalizeValue(\$field, \$posted[\$fieldName]);
-                if (!empty(\$field['required']) && (\$value === null || \$value === '')) {
-                    throw new RuntimeException('Campo obbligatorio: ' . \$field['label']);
-                }
-
-                \$columns[] = \$fieldName;
-                \$values[] = \$value;
-            }
-
-            if (\$action === 'insert') {
-                if (!\$modalCrudAdd) {
-                    throw new RuntimeException('Inserimento non abilitato.');
-                }
-                if (!\$columns) {
-                    throw new RuntimeException('Nessun campo da inserire.');
-                }
-
-                \$db->execute(
-                    'INSERT INTO ' . crudQuote(\$tableName)
-                    . ' (' . implode(', ', array_map('crudQuote', \$columns)) . ')'
-                    . ' VALUES (' . implode(', ', array_fill(0, count(\$columns), '?')) . ')',
-                    \$values
-                );
-
-                header('Location: ' . crudRedirectUrl('inserted'));
-                exit;
-            }
-
-            if (\$action === 'update') {
-                if (!\$modalCrudEdit) {
-                    throw new RuntimeException('Modifica non abilitata.');
-                }
-
-                \$pkValue = \$_POST['pk_value'] ?? null;
-                if (\$pkValue === null || \$pkValue === '') {
-                    throw new RuntimeException('Chiave del record collegato non valida.');
-                }
-                if (!\$columns) {
-                    throw new RuntimeException('Nessun campo da aggiornare.');
-                }
-
-                \$assignments = array_map(
-                    fn(string \$column): string => crudQuote(\$column) . ' = ?',
-                    \$columns
-                );
-                \$values[] = \$pkValue;
-
-                \$db->execute(
-                    'UPDATE ' . crudQuote(\$tableName)
-                    . ' SET ' . implode(', ', \$assignments)
-                    . ' WHERE ' . crudQuote(\$pkName) . ' = ?',
-                    \$values
-                );
-
-                header('Location: ' . crudRedirectUrl('updated'));
-                exit;
-            }
-        } catch (Throwable \$crudException) {
-            \$crudError = \$crudException->getMessage();
-        }
-    }
-
-    \$modalEditId = \$_GET['modal_edit'] ?? null;
-    if (\$modalCrudEdit && \$modalEditId !== null && \$modalEditId !== '') {
-        \$modalCrudEditRecord = \$db->fetch(
-            'SELECT * FROM ' . crudQuote((string) \$modalCrudEffectiveConfig['table_name'])
-            . ' WHERE ' . crudQuote((string) \$modalCrudEffectiveConfig['primary_key']['field_name']) . ' = ?',
-            [\$modalEditId]
-        );
-    }
-}
-
-\$wrappedSql = "SELECT * FROM (" . \$baseSql . ") generated_data";
-\$where = [];
-\$params = [];
-
-if (
-    \$crudEnabled
-    && \$navigateRecord !== null
-    && \$navigateRecord !== ''
-    && !empty(\$crudConfig['primary_key_alias'])
-) {
-    \$where[] = '`' . str_replace('`', '``', (string) \$crudConfig['primary_key_alias']) . '` = ?';
-    \$params[] = \$navigateRecord;
-}
-
-if (\$searchEnabled && \$search !== '' && \$searchableAliases) {
-    \$parts = [];
-    foreach (\$searchableAliases as \$alias) {
-        \$parts[] = "CAST(`" . str_replace('`', '``', \$alias) . "` AS CHAR) LIKE ?";
-        \$params[] = '%' . \$search . '%';
-    }
-    \$where[] = '(' . implode(' OR ', \$parts) . ')';
-}
-
-foreach (\$fields as \$field) {
-    if (empty(\$field['filter_enabled'])) continue;
-
-    \$alias = \$field['output_alias'];
-    \$type = \$field['filter_type'] ?? 'TESTO';
-    \$filter = \$advancedFilters[\$alias] ?? '';
-
-    if (in_array(\$type, ['INTERVALLO_NUMERO', 'INTERVALLO_DATA'], true)) {
-        \$from = trim((string) (\$filter['from'] ?? ''));
-        \$to = trim((string) (\$filter['to'] ?? ''));
-        if (\$from !== '') {
-            \$where[] = "`" . str_replace('`', '``', \$alias) . "` >= ?";
-            \$params[] = \$from;
-        }
-        if (\$to !== '') {
-            \$where[] = "`" . str_replace('`', '``', \$alias) . "` <= ?";
-            \$params[] = \$to;
-        }
-        continue;
-    }
-
-    \$filter = trim((string) \$filter);
-    if (\$filter === '') continue;
-
-    if (in_array(\$type, ['UGUALE', 'BOOLEANO'], true)) {
-        \$where[] = "`" . str_replace('`', '``', \$alias) . "` = ?";
-        \$params[] = \$filter;
-    } else {
-        \$where[] = "CAST(`" . str_replace('`', '``', \$alias) . "` AS CHAR) LIKE ?";
-        \$params[] = '%' . \$filter . '%';
-    }
-}
-
-if (\$where) {
-    \$wrappedSql .= ' WHERE ' . implode(' AND ', \$where);
-}
-
-\$countSql = "SELECT COUNT(*) FROM (" . \$wrappedSql . ") count_data";
-\$totalRows = (int) \$db->fetchColumn(\$countSql, \$params);
-\$totalPages = \$paginationEnabled
-    ? max(1, (int) ceil(\$totalRows / \$rowsPerPage))
-    : 1;
-\$page = min(\$page, \$totalPages);
-
-if (\$sortEnabled && isset(\$sortableAliases[\$sort])) {
-    \$wrappedSql .= " ORDER BY `" . str_replace('`', '``', \$sort) . "` " . \$direction;
-}
-
-if (\$paginationEnabled) {
-    \$offset = (\$page - 1) * \$rowsPerPage;
-    \$wrappedSql .= " LIMIT " . (int) \$rowsPerPage . " OFFSET " . (int) \$offset;
-}
-
-\$rows = \$db->fetchAll(\$wrappedSql, \$params);
-
-\$modalDataByRow = [];
-
-if (\$hasModalDetail) {
-    \$modalSelect = [];
-    if (!empty(\$modalCrudEffectiveConfig['available'])) {
-        \$modalSelect[] =
-            "`" . str_replace('`', '``', (string) \$modalCrudEffectiveConfig['primary_key']['field_name']) . "` AS `__modal_pk`";
-    }
-    foreach (\$modalVisibleFields as \$field) {
-        \$modalSelect[] =
-            "`" . str_replace('`', '``', (string) \$field['field_name']) . "` AS `" .
-            str_replace('`', '``', (string) \$field['alias']) . "`";
-    }
-
-    \$modalSql =
-        "SELECT " . implode(', ', \$modalSelect)
-        . " FROM `" . str_replace('`', '``', (string) \$modalConfig['linked_table_name']) . "`"
-        . " WHERE `" . str_replace('`', '``', (string) \$modalConfig['linked_field_name']) . "` = ?";
-
-    foreach (\$rows as \$rowIndex => \$row) {
-        \$filterValue = \$row[\$modalConfig['main_value_alias']] ?? null;
-
-        if (\$filterValue === null || \$filterValue === '') {
-            \$modalDataByRow[\$rowIndex] = [];
+    $length = strlen($source);
+    $depth = 0;
+    $closingBrace = null;
+    $tokens = token_get_all('<?php ' . substr($source, $openingBrace));
+    $offset = $openingBrace;
+
+    foreach ($tokens as $token) {
+        $text = is_array($token) ? $token[1] : $token;
+        if ($text === '<?php ') {
             continue;
         }
 
-        \$modalDataByRow[\$rowIndex] = \$db->fetchAll(\$modalSql, [\$filterValue]);
+        if ($text === '{') {
+            $depth++;
+        } elseif ($text === '}') {
+            $depth--;
+            if ($depth === 0) {
+                $closingBrace = $offset;
+                break;
+            }
+        }
+
+        $offset += strlen($text);
     }
-}
 
-function displayValue(mixed \$value, string \$format, string \$basePath = ''): string
-{
-    if (\$value === null || \$value === '') {
-        return '<span class="text-muted">—</span>';
+    if ($closingBrace === null || $closingBrace >= $length) {
+        throw new RuntimeException('Chiusura della funzione di generazione non trovata.');
     }
 
-    \$raw = (string) \$value;
-    \$resource = \$basePath !== ''
-        ? rtrim(\$basePath, '/') . '/' . ltrim(\$raw, '/')
-        : \$raw;
-    \$safeResource = htmlspecialchars(\$resource, ENT_QUOTES, 'UTF-8');
-
-    switch (\$format) {
-        case 'NUMERO_0':
-            return htmlspecialchars(number_format((float) \$value, 0, ',', '.'), ENT_QUOTES, 'UTF-8');
-        case 'NUMERO_1':
-            return htmlspecialchars(number_format((float) \$value, 1, ',', '.'), ENT_QUOTES, 'UTF-8');
-        case 'NUMERO_2':
-        case 'NUMERO':
-            return htmlspecialchars(number_format((float) \$value, 2, ',', '.'), ENT_QUOTES, 'UTF-8');
-        case 'NUMERO_3':
-            return htmlspecialchars(number_format((float) \$value, 3, ',', '.'), ENT_QUOTES, 'UTF-8');
-        case 'VALUTA':
-            return htmlspecialchars(number_format((float) \$value, 2, ',', '.') . ' €', ENT_QUOTES, 'UTF-8');
-        case 'DATA_GGMMAAAA':
-        case 'DATA':
-            \$timestamp = strtotime((string) \$value);
-            return \$timestamp ? date('d/m/Y', \$timestamp) : htmlspecialchars((string) \$value, ENT_QUOTES, 'UTF-8');
-        case 'DATA_AAAA_MM_GG':
-            \$timestamp = strtotime((string) \$value);
-            return \$timestamp ? date('Y-m-d', \$timestamp) : htmlspecialchars((string) \$value, ENT_QUOTES, 'UTF-8');
-        case 'DATA_ORA':
-        case 'DATA_ORA_GGMMAAAA':
-            \$timestamp = strtotime((string) \$value);
-            return \$timestamp ? date('d/m/Y H:i', \$timestamp) : htmlspecialchars((string) \$value, ENT_QUOTES, 'UTF-8');
-        case 'DATA_ORA_AAAA_MM_GG':
-            \$timestamp = strtotime((string) \$value);
-            return \$timestamp ? date('Y-m-d H:i', \$timestamp) : htmlspecialchars((string) \$value, ENT_QUOTES, 'UTF-8');
-        case 'ORA':
-            \$timestamp = strtotime((string) \$value);
-            return \$timestamp ? date('H:i', \$timestamp) : htmlspecialchars((string) \$value, ENT_QUOTES, 'UTF-8');
-        case 'BOOLEANO':
-            return (bool) \$value
-                ? '<span class="badge bg-success">Sì</span>'
-                : '<span class="badge bg-secondary">No</span>';
-        case 'JSON':
-            \$decoded = json_decode((string) \$value, true);
-            \$formatted = \$decoded === null
-                ? (string) \$value
-                : json_encode(\$decoded, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
-            return '<pre class="mb-0 small">' . htmlspecialchars(\$formatted, ENT_QUOTES, 'UTF-8') . '</pre>';
-        case 'IMMAGINE':
-            return '<a href="' . \$safeResource . '" target="_blank" rel="noopener">'
-                . '<img src="' . \$safeResource . '" alt="" class="img-fluid rounded border" '
-                . 'style="max-height:180px;object-fit:contain"></a>';
-        case 'FILE':
-            \$name = basename(parse_url(\$resource, PHP_URL_PATH) ?: \$resource);
-            return '<a class="btn btn-sm btn-outline-primary" href="' . \$safeResource
-                . '" target="_blank" rel="noopener" download><i class="bi bi-download me-1"></i>'
-                . htmlspecialchars(\$name, ENT_QUOTES, 'UTF-8') . '</a>';
-        case 'URL':
-            return '<a href="' . \$safeResource . '" target="_blank" rel="noopener">'
-                . htmlspecialchars(\$raw, ENT_QUOTES, 'UTF-8') . '</a>';
-        case 'EMAIL':
-            return '<a href="mailto:' . htmlspecialchars(\$raw, ENT_QUOTES, 'UTF-8') . '">'
-                . htmlspecialchars(\$raw, ENT_QUOTES, 'UTF-8') . '</a>';
-        default:
-            return nl2br(htmlspecialchars((string) \$value, ENT_QUOTES, 'UTF-8'));
-    }
-}
-
-function linkedValue(array \$field, array \$row): string
-{
-    \$html = displayValue(
-        \$row[\$field['output_alias']] ?? null,
-        \$field['format'],
-        \$field['base_path'] ?? ''
+    $functionCode = substr($source, $signatureOffset, $closingBrace - $signatureOffset + 1);
+    $functionCode = preg_replace(
+        '/^function generatePagePhp\\b/',
+        'function buildGeneratedPageCodeFromCanonicalTemplate',
+        $functionCode,
+        1
     );
 
-    \$file = trim((string) (\$field['link_target_file'] ?? ''));
-    \$param = trim((string) (\$field['link_parameter'] ?? ''));
-    \$valueAlias = trim((string) (\$field['link_value_alias'] ?? ''));
-
-    if (\$file === '' || \$param === '' || \$valueAlias === '') return \$html;
-
-    \$value = \$row[\$valueAlias] ?? null;
-    if (\$value === null || \$value === '') return \$html;
-
-    \$url = \$file . (str_contains(\$file, '?') ? '&' : '?')
-        . rawurlencode(\$param) . '=' . rawurlencode((string) \$value);
-
-    return '<a class="text-decoration-none" href="'
-        . htmlspecialchars(\$url, ENT_QUOTES, 'UTF-8') . '">' . \$html . '</a>';
-}
-
-function buildQuery(array \$overrides = []): string
-{
-    \$query = array_merge(\$_GET, \$overrides);
-
-    // Il messaggio CRUD è un messaggio temporaneo: non deve essere propagato
-    // quando si cambia record, si cerca, si ordina o si usa la paginazione.
-    if (!array_key_exists('crud_message', \$overrides)) {
-        unset(\$query['crud_message']);
+    if (!is_string($functionCode)) {
+        throw new RuntimeException('Preparazione del template canonico non riuscita.');
     }
 
-    foreach (\$query as \$key => \$value) {
-        if (\$value === null || \$value === '') {
-            unset(\$query[\$key]);
-        }
+    eval($functionCode);
+    if (!function_exists('buildGeneratedPageCodeFromCanonicalTemplate')) {
+        throw new RuntimeException('Caricamento del template canonico non riuscito.');
     }
-    return '?' . http_build_query(\$query);
-}
-?>
 
-<style>
-.generated-view-page {
-    max-width: 1200px;
-    margin: 0 auto;
-}
-.generated-view-page .generated-toolbar {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: center;
-    gap: .75rem;
-}
-.generated-view-page .generated-search {
-    grid-column: 1 / -1;
-    max-width: 680px;
-    width: 100%;
-}
-.generated-view-page .generated-card-actions {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: flex-end;
-    gap: .4rem;
-}
-.generated-view-page .generated-field {
-    min-height: 100%;
-}
-.generated-view-page .required-mark {
-    color: var(--bs-danger);
-    font-weight: 700;
-    margin-left: .2rem;
-}
-.generated-view-page .modal {
-    z-index: 2000;
-}
-.generated-view-page .modal-backdrop {
-    z-index: 1990;
-}
-.generated-view-page .modal-content {
-    border: 1px solid var(--bs-border-color);
-    border-radius: var(--bs-border-radius);
-    box-shadow: var(--bs-box-shadow);
-    overflow: hidden;
-}
-.generated-view-page .modal-header {
-    background-color: var(--bs-light-bg-subtle);
-    border-bottom: 1px solid var(--bs-border-color);
-}
-.generated-view-page .modal-body {
-    padding: 1.25rem;
-}
-.generated-view-page .modal-body .form-label {
-    font-weight: 600;
-}
-.generated-view-page .modal-body .form-control,
-.generated-view-page .modal-body .form-select,
-.generated-view-page .modal-body textarea {
-    background-color: var(--bs-light-bg-subtle);
-}
-.generated-view-page .modal-footer {
-    background-color: var(--bs-light-bg-subtle);
-    border-top: 1px solid var(--bs-border-color);
-}
-@media (max-width: 575.98px) {
-    .generated-view-page {
-        padding-left: .65rem !important;
-        padding-right: .65rem !important;
-    }
-    .generated-view-page .generated-toolbar {
-        grid-template-columns: 1fr;
-        align-items: stretch;
-    }
-    .generated-view-page .generated-toolbar h3 {
-        font-size: 1.35rem;
-    }
-    .generated-view-page .generated-toolbar-actions,
-    .generated-view-page .generated-search {
-        width: 100%;
-    }
-    .generated-view-page .generated-toolbar-actions .btn,
-    .generated-view-page .generated-search .btn,
-    .generated-view-page .generated-search .form-control {
-        min-height: 44px;
-    }
-    .generated-view-page .generated-search {
-        display: grid !important;
-        grid-template-columns: 1fr auto;
-    }
-    .generated-view-page .generated-search .btn-outline-secondary {
-        grid-column: 1 / -1;
-    }
-    .generated-view-page .card-header {
-        align-items: stretch !important;
-    }
-    .generated-view-page .generated-card-actions {
-        width: 100%;
-        justify-content: stretch;
-    }
-    .generated-view-page .generated-card-actions > .btn,
-    .generated-view-page .generated-card-actions > a,
-    .generated-view-page .generated-card-actions > form {
-        flex: 1 1 calc(50% - .4rem);
-    }
-    .generated-view-page .generated-card-actions form .btn {
-        width: 100%;
-    }
-    .generated-view-page .card-body {
-        padding: .8rem;
-    }
-    .generated-view-page .generated-field {
-        padding: .85rem !important;
-    }
-    .generated-view-page .card-footer .btn-group {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        width: 100%;
-    }
-    .generated-view-page .card-footer .btn {
-        white-space: nowrap;
-    }
-    .generated-view-page .modal-dialog {
-        margin: .5rem;
-    }
-    .generated-view-page .modal-footer {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-    }
-    .generated-view-page .modal-footer > * {
-        width: 100%;
-        margin: 0;
-    }
-}
-</style>
-
-<div class="container-fluid py-3 generated-view-page">
-    <div class="generated-toolbar mb-3">
-        <div class="d-flex flex-wrap align-items-center gap-2 mb-0">
-            <h3 class="mb-0"><?= htmlspecialchars(\$pageTitle, ENT_QUOTES, 'UTF-8') ?></h3>
-            <span class="badge text-bg-secondary">
-                Pagina v<?= htmlspecialchars(\$generatedPageVersion, ENT_QUOTES, 'UTF-8') ?>
-            </span>
-        </div>
-
-        <div class="d-flex flex-wrap gap-2 generated-toolbar-actions">
-            <?php if (\$crudEnabled && \$crudAdd): ?>
-                <button type="button"
-                        class="btn btn-success"
-                        data-bs-toggle="modal"
-                        data-bs-target="#crudInsertModal">
-                    <i class="bi bi-plus-lg me-1"></i>Aggiungi
-                </button>
-            <?php endif; ?>
-        </div>
-
-        <?php if (\$searchEnabled): ?>
-            <form method="get" class="d-flex gap-2 generated-search">
-                <?php foreach (\$_GET as \$key => \$value): ?>
-                    <?php if (!in_array(\$key, ['q', 'p', 'crud_message'], true)): ?>
-                        <input type="hidden"
-                               name="<?= htmlspecialchars((string) \$key, ENT_QUOTES, 'UTF-8') ?>"
-                               value="<?= htmlspecialchars((string) \$value, ENT_QUOTES, 'UTF-8') ?>">
-                    <?php endif; ?>
-                <?php endforeach; ?>
-                <input type="search"
-                       name="q"
-                       class="form-control"
-                       value="<?= htmlspecialchars(\$search, ENT_QUOTES, 'UTF-8') ?>"
-                       placeholder="Cerca...">
-                <button class="btn btn-primary" type="submit">Cerca</button>
-                <?php if (\$search !== ''): ?>
-                    <a class="btn btn-outline-secondary" href="<?= htmlspecialchars(buildQuery(['q' => null, 'p' => 1]), ENT_QUOTES, 'UTF-8') ?>">Azzera</a>
-                <?php endif; ?>
-            </form>
-        <?php endif; ?>
-    </div>
-
-
-    <?php if (\$crudMessage !== ''): ?>
-        <div class="alert alert-success alert-dismissible fade show">
-            <?= htmlspecialchars(\$crudMessage, ENT_QUOTES, 'UTF-8') ?>
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-        </div>
-    <?php endif; ?>
-
-    <?php if (\$crudError !== ''): ?>
-        <div class="alert alert-danger">
-            <?= htmlspecialchars(\$crudError, ENT_QUOTES, 'UTF-8') ?>
-        </div>
-    <?php endif; ?>
-
-    <?php
-    \$filterFields = array_values(array_filter(
-        \$fields,
-        fn(array \$field): bool => !empty(\$field['filter_enabled'])
-    ));
-    ?>
-    <?php if (\$filterFields): ?>
-        <div class="card mb-3 shadow-sm">
-            <div class="card-header bg-light">
-                <strong><i class="bi bi-funnel me-1"></i>Filtri avanzati</strong>
-            </div>
-            <div class="card-body">
-                <form method="get" class="row g-3">
-                    <?php foreach (\$filterFields as \$field): ?>
-                        <?php
-                        \$alias = \$field['output_alias'];
-                        \$type = \$field['filter_type'] ?? 'TESTO';
-                        \$current = \$advancedFilters[\$alias] ?? '';
-                        ?>
-                        <div class="col-12 col-md-6 col-xl-4">
-                            <label class="form-label"><?= htmlspecialchars(\$field['label'], ENT_QUOTES, 'UTF-8') ?></label>
-                            <?php if (in_array(\$type, ['INTERVALLO_NUMERO','INTERVALLO_DATA'], true)): ?>
-                                <?php \$inputType = \$type === 'INTERVALLO_DATA' ? 'date' : 'number'; ?>
-                                <div class="input-group">
-                                    <input type="<?= \$inputType ?>" class="form-control"
-                                           name="f[<?= \$alias ?>][from]"
-                                           value="<?= htmlspecialchars((string) (\$current['from'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"
-                                           placeholder="Da">
-                                    <input type="<?= \$inputType ?>" class="form-control"
-                                           name="f[<?= \$alias ?>][to]"
-                                           value="<?= htmlspecialchars((string) (\$current['to'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"
-                                           placeholder="A">
-                                </div>
-                            <?php elseif (\$type === 'BOOLEANO'): ?>
-                                <select class="form-select" name="f[<?= \$alias ?>]">
-                                    <option value="">Tutti</option>
-                                    <option value="1" <?= (string) \$current === '1' ? 'selected' : '' ?>>Sì</option>
-                                    <option value="0" <?= (string) \$current === '0' ? 'selected' : '' ?>>No</option>
-                                </select>
-                            <?php else: ?>
-                                <input type="text" class="form-control" name="f[<?= \$alias ?>]"
-                                       value="<?= htmlspecialchars((string) \$current, ENT_QUOTES, 'UTF-8') ?>"
-                                       placeholder="<?= \$type === 'UGUALE' ? 'Valore esatto' : 'Contiene...' ?>">
-                            <?php endif; ?>
-                        </div>
-                    <?php endforeach; ?>
-                    <div class="col-12">
-                        <button class="btn btn-primary" type="submit">Applica filtri</button>
-                        <a class="btn btn-outline-secondary" href="?">Azzera</a>
-                    </div>
-                </form>
-            </div>
-        </div>
-    <?php endif; ?>
-
-    <?php if (\$viewType === 'SCHEDA_SINGOLA'): ?>
-        <?php if (!\$rows): ?>
-            <div class="alert alert-secondary">
-                Nessun dato disponibile.
-            </div>
-        <?php else: ?>
-            <?php \$singleRecord = \$rows[0]; ?>
-            <?php \$currentPk = \$crudEnabled ? (\$singleRecord[\$crudConfig['primary_key_alias']] ?? null) : null; ?>
-
-            <div class="card shadow-sm">
-                <div class="card-header bg-light d-flex flex-wrap justify-content-between align-items-center gap-2">
-                    <strong><?= htmlspecialchars(\$pageTitle, ENT_QUOTES, 'UTF-8') ?></strong>
-                    <div class="generated-card-actions">
-                        <?php if (\$crudEdit && \$currentPk !== null): ?>
-                            <a class="btn btn-sm btn-outline-warning"
-                               href="<?= htmlspecialchars(buildQuery(['edit' => \$currentPk]), ENT_QUOTES, 'UTF-8') ?>">
-                                <i class="bi bi-pencil me-1"></i>Modifica
-                            </a>
-                        <?php endif; ?>
-                        <?php if (\$crudDelete && \$currentPk !== null): ?>
-                            <form method="post" class="d-inline"
-                                  onsubmit="return confirm('Cancellare definitivamente il record?');">
-                                <input type="hidden" name="csrf" value="<?= htmlspecialchars(\$crudCsrf, ENT_QUOTES, 'UTF-8') ?>">
-                                <input type="hidden" name="crud_action" value="delete">
-                                <input type="hidden" name="pk_value" value="<?= htmlspecialchars((string) \$currentPk, ENT_QUOTES, 'UTF-8') ?>">
-                                <button class="btn btn-sm btn-outline-danger" type="submit">
-                                    <i class="bi bi-trash me-1"></i>Cancella
-                                </button>
-                            </form>
-                        <?php endif; ?>
-                    </div>
-                </div>
-
-                <div class="card-body">
-                    <form class="row g-3" method="get" onsubmit="return false;">
-                        <?php foreach (\$visibleFields as \$field): ?>
-                            <?php
-                            \$alignment = match (\$field['alignment']) {
-                                'CENTRO' => 'text-center',
-                                'DESTRA' => 'text-end',
-                                default => 'text-start',
-                            };
-                            ?>
-                            <?php
-                            \$bootstrapColumn = (int) (\$field['bootstrap_col'] ?? 6);
-                            if (\$bootstrapColumn < 1 || \$bootstrapColumn > 12) \$bootstrapColumn = 6;
-                            ?>
-                            <div class="col-12 col-md-<?= \$bootstrapColumn ?>">
-                                <label class="form-label fw-semibold">
-                                    <?= htmlspecialchars(\$field['label'], ENT_QUOTES, 'UTF-8') ?>
-                                </label>
-                                <div class="form-control-plaintext border rounded px-3 py-2 bg-light-subtle <?= \$alignment ?>">
-                                    <?= linkedValue(\$field, \$singleRecord) ?>
-                                </div>
-                            </div>
-                        <?php endforeach; ?>
-                    </form>
-                </div>
-            </div>
-
-            <?php
-            \$firstPage = 1;
-            \$prevPage = max(1, \$page - 1);
-            \$nextPage = min(\$totalPages, \$page + 1);
-            \$lastPage = max(1, \$totalPages);
-            ?>
-
-            <div class="d-flex flex-wrap justify-content-end gap-2 mt-3">
-                <a class="btn btn-outline-secondary <?= \$page <= 1 ? 'disabled' : '' ?>"
-                   href="<?= htmlspecialchars(buildQuery(['p' => \$firstPage]), ENT_QUOTES, 'UTF-8') ?>">
-                    Primo
-                </a>
-                <a class="btn btn-outline-secondary <?= \$page <= 1 ? 'disabled' : '' ?>"
-                   href="<?= htmlspecialchars(buildQuery(['p' => \$prevPage]), ENT_QUOTES, 'UTF-8') ?>">
-                    Indietro
-                </a>
-                <a class="btn btn-outline-secondary <?= \$page >= \$totalPages ? 'disabled' : '' ?>"
-                   href="<?= htmlspecialchars(buildQuery(['p' => \$nextPage]), ENT_QUOTES, 'UTF-8') ?>">
-                    Avanti
-                </a>
-                <a class="btn btn-outline-secondary <?= \$page >= \$totalPages ? 'disabled' : '' ?>"
-                   href="<?= htmlspecialchars(buildQuery(['p' => \$lastPage]), ENT_QUOTES, 'UTF-8') ?>">
-                    Ultimo
-                </a>
-            </div>
-
-            <?php if (\$hasModalDetail && (!empty(\$modalDataByRow[0]) || \$modalCrudAdd)): ?>
-                {$singleCardModalPhp}
-            <?php endif; ?>
-        <?php endif; ?>
-    <?php else: ?>
-        <div class="table-responsive border rounded shadow-sm">
-            <table class="table table-hover align-middle mb-0">
-                <thead class="table-light">
-                    <tr>
-                        <?php foreach (\$visibleFields as \$field): ?>
-                            <th style="<?= \$field['width'] !== '' ? 'width:' . htmlspecialchars(\$field['width'], ENT_QUOTES, 'UTF-8') : '' ?>">
-                                <?php if (\$sortEnabled && !empty(\$field['sortable'])): ?>
-                                    <?php
-                                    \$newDirection = (\$sort === \$field['output_alias'] && \$direction === 'ASC') ? 'DESC' : 'ASC';
-                                    ?>
-                                    <a class="text-decoration-none text-dark"
-                                       href="<?= htmlspecialchars(buildQuery([
-                                           'sort' => \$field['output_alias'],
-                                           'dir' => \$newDirection,
-                                           'p' => 1
-                                       ]), ENT_QUOTES, 'UTF-8') ?>">
-                                        <?= htmlspecialchars(\$field['label'], ENT_QUOTES, 'UTF-8') ?>
-                                    </a>
-                                <?php else: ?>
-                                    <?= htmlspecialchars(\$field['label'], ENT_QUOTES, 'UTF-8') ?>
-                                <?php endif; ?>
-                            </th>
-                        <?php endforeach; ?>
-                        <?php if (\$hasModalDetail || (\$crudEnabled && (\$crudEdit || \$crudDelete))): ?>
-                            <th class="text-end">Azioni</th>
-                        <?php endif; ?>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php if (!\$rows): ?>
-                        <tr>
-                            <td colspan="<?= count(\$visibleFields) + ((\$hasModalDetail || (\$crudEnabled && (\$crudEdit || \$crudDelete))) ? 1 : 0) ?>"
-                                class="text-center text-muted py-4">
-                                Nessun dato disponibile.
-                            </td>
-                        </tr>
-                    <?php endif; ?>
-
-                    <?php foreach (\$rows as \$rowIndex => \$row): ?>
-                        <tr>
-                            <?php foreach (\$visibleFields as \$field): ?>
-                                <?php
-                                \$alignment = match (\$field['alignment']) {
-                                    'CENTRO' => 'text-center',
-                                    'DESTRA' => 'text-end',
-                                    default => 'text-start',
-                                };
-                                ?>
-                                <td class="<?= \$alignment ?>">
-                                    <?= linkedValue(\$field, \$row) ?>
-                                </td>
-                            <?php endforeach; ?>
-
-                            <?php if (\$hasModalDetail || (\$crudEnabled && (\$crudEdit || \$crudDelete))): ?>
-                                <?php
-                                \$currentPk = \$primaryKeyAlias !== ''
-                                    ? (\$row[\$primaryKeyAlias] ?? null)
-                                    : null;
-                                ?>
-                                <td class="text-end">
-                                    <div class="d-flex flex-wrap justify-content-end gap-1">
-                                        <?php if (\$hasModalDetail && (!empty(\$modalDataByRow[\$rowIndex]) || \$modalCrudAdd)): ?>
-                                            <button type="button"
-                                                    class="btn btn-sm btn-outline-primary js-open-modal-crud"
-                                                    data-bs-toggle="modal"
-                                                    data-bs-target="#recordModal<?= \$rowIndex ?>">
-                                                <?= !empty(\$modalDataByRow[\$rowIndex]) ? 'Record collegati' : 'Inserisci collegato' ?>
-                                            </button>
-                                        <?php endif; ?>
-
-                                        <?php if (\$currentPk !== null): ?>
-                                            <?php if (\$crudEnabled && \$crudEdit): ?>
-                                                <a class="btn btn-sm btn-outline-warning"
-                                                   href="<?= htmlspecialchars(buildQuery(['edit' => \$currentPk]), ENT_QUOTES, 'UTF-8') ?>">
-                                                    Modifica
-                                                </a>
-                                            <?php endif; ?>
-
-                                            <?php if (\$crudEnabled && \$crudDelete): ?>
-                                                <form method="post"
-                                                      onsubmit="return confirm('Cancellare definitivamente il record?');">
-                                                    <input type="hidden" name="csrf"
-                                                           value="<?= htmlspecialchars(\$crudCsrf, ENT_QUOTES, 'UTF-8') ?>">
-                                                    <input type="hidden" name="crud_action" value="delete">
-                                                    <input type="hidden" name="pk_value"
-                                                           value="<?= htmlspecialchars((string) \$currentPk, ENT_QUOTES, 'UTF-8') ?>">
-                                                    <button class="btn btn-sm btn-outline-danger" type="submit">
-                                                        Cancella
-                                                    </button>
-                                                </form>
-                                            <?php endif; ?>
-                                        <?php endif; ?>
-                                    </div>
-                                </td>
-                            <?php endif; ?>
-                        </tr>
-                    <?php endforeach; ?>
-                </tbody>
-            </table>
-        </div>
-    <?php endif; ?>
-
-    {$tableRowCardModalPhp}
-
-    <?php if (\$viewType !== 'SCHEDA_SINGOLA' && \$paginationEnabled && \$totalPages > 1): ?>
-        <nav class="mt-3" aria-label="Paginazione">
-            <ul class="pagination justify-content-center flex-wrap">
-                <li class="page-item <?= \$page <= 1 ? 'disabled' : '' ?>">
-                    <a class="page-link" href="<?= htmlspecialchars(buildQuery(['p' => max(1, \$page - 1)]), ENT_QUOTES, 'UTF-8') ?>">Precedente</a>
-                </li>
-
-                <?php
-                \$start = max(1, \$page - 3);
-                \$end = min(\$totalPages, \$page + 3);
-                for (\$number = \$start; \$number <= \$end; \$number++):
-                ?>
-                    <li class="page-item <?= \$number === \$page ? 'active' : '' ?>">
-                        <a class="page-link" href="<?= htmlspecialchars(buildQuery(['p' => \$number]), ENT_QUOTES, 'UTF-8') ?>">
-                            <?= \$number ?>
-                        </a>
-                    </li>
-                <?php endfor; ?>
-
-                <li class="page-item <?= \$page >= \$totalPages ? 'disabled' : '' ?>">
-                    <a class="page-link" href="<?= htmlspecialchars(buildQuery(['p' => min(\$totalPages, \$page + 1)]), ENT_QUOTES, 'UTF-8') ?>">Successiva</a>
-                </li>
-            </ul>
-        </nav>
-    <?php endif; ?>
-
-    <?php if (\$crudAdd): ?>
-        <div class="modal fade" id="crudInsertModal" tabindex="-1" aria-hidden="true">
-            <div class="modal-dialog modal-lg modal-dialog-scrollable modal-fullscreen-sm-down">
-                <form method="post" class="modal-content">
-                    <div class="modal-header">
-                        <h5 class="modal-title">Inserisci record</h5>
-                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                    </div>
-                    <div class="modal-body">
-                        <input type="hidden" name="csrf"
-                               value="<?= htmlspecialchars(\$crudCsrf, ENT_QUOTES, 'UTF-8') ?>">
-                        <input type="hidden" name="crud_action" value="insert">
-                        <div class="row g-3">
-                            <?php foreach (\$crudConfig['fields'] as \$pageField): ?>
-                                <?php
-                                if (empty(\$pageField['editable']) || empty(\$pageField['insert_visible'])) continue;
-                                ?>
-                                <?php if ((string) (\$pageField['field_name'] ?? '') === \$primaryKeyFieldName) continue; ?>
-                                <div class="col-12 col-md-6">
-                                    <?php renderInsertModalField(\$pageField, \$crudDropdowns); ?>
-                                </div>
-                            <?php endforeach; ?>
-                        </div>
-                    </div>
-                    <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-                            Annulla
-                        </button>
-                        <button type="submit" class="btn btn-success">
-                            <i class="bi bi-check-lg me-1"></i>Inserisci
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </div>
-    <?php endif; ?>
-
-    <?php if (\$crudEnabled && \$crudEdit && \$crudEditRecord): ?>
-        <div class="modal fade"
-             id="crudEditModal"
-             tabindex="-1"
-             aria-hidden="true"
-             data-return-url="<?= htmlspecialchars(buildQuery(['edit' => null]), ENT_QUOTES, 'UTF-8') ?>">
-            <div class="modal-dialog modal-lg modal-dialog-scrollable modal-fullscreen-sm-down">
-                <form method="post" class="modal-content">
-                    <div class="modal-header">
-                        <h5 class="modal-title">Modifica record</h5>
-                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                    </div>
-                    <div class="modal-body">
-                        <input type="hidden" name="csrf"
-                               value="<?= htmlspecialchars(\$crudCsrf, ENT_QUOTES, 'UTF-8') ?>">
-                        <input type="hidden" name="crud_action" value="update">
-                        <input type="hidden" name="pk_value"
-                               value="<?= htmlspecialchars(
-                                   (string) (\$crudEditRecord[\$crudConfig['primary_key']['field_name']] ?? ''),
-                                   ENT_QUOTES,
-                                   'UTF-8'
-                               ) ?>">
-
-                        <div class="row g-3">
-                            <?php foreach (\$crudConfig['fields'] as \$crudField): ?>
-                                <?php
-                                if (empty(\$crudField['editable']) || empty(\$crudField['update_visible'])) continue;
-                                ?>
-                                <?php if ((string) (\$crudField['field_name'] ?? '') === \$primaryKeyFieldName) continue; ?>
-                                <div class="col-12 col-md-6">
-                                    <?php renderCrudField(
-                                        \$crudField,
-                                        \$crudEditRecord[\$crudField['field_name']] ?? null,
-                                        \$crudDropdowns
-                                    ); ?>
-                                </div>
-                            <?php endforeach; ?>
-                        </div>
-                    </div>
-                    <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-                            Annulla
-                        </button>
-                        <button type="submit" class="btn btn-warning">
-                            <i class="bi bi-check-lg me-1"></i>Salva modifica
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </div>
-    <?php endif; ?>
-
-    <?php if (\$modalCrudEdit && \$modalCrudEditRecord): ?>
-        <div class="modal fade"
-             id="modalCrudEditModal"
-             tabindex="-1"
-             aria-hidden="true"
-             data-return-url="<?= htmlspecialchars(buildQuery(['modal_edit' => null]), ENT_QUOTES, 'UTF-8') ?>">
-            <div class="modal-dialog modal-lg modal-dialog-scrollable modal-fullscreen-sm-down">
-                <form method="post" class="modal-content">
-                    <div class="modal-header">
-                        <h5 class="modal-title">Modifica record collegato</h5>
-                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                    </div>
-                    <div class="modal-body">
-                        <input type="hidden" name="csrf"
-                               value="<?= htmlspecialchars(\$crudCsrf, ENT_QUOTES, 'UTF-8') ?>">
-                        <input type="hidden" name="modal_crud_action" value="update">
-                <input type="hidden" name="pk_value"
-                       value="<?= htmlspecialchars(
-                           (string) (\$modalCrudEditRecord[\$modalCrudEffectiveConfig['primary_key']['field_name']] ?? ''),
-                                   ENT_QUOTES,
-                                   'UTF-8'
-                               ) ?>">
-
-                        <div class="row g-3">
-                            <?php foreach (\$modalCrudEffectiveConfig['fields'] as \$crudField): ?>
-                                <?php
-                                if (empty(\$crudField['editable'])) continue;
-                                if ((string) \$crudField['field_name'] === (string) \$modalConfig['linked_field_name']) continue;
-                                ?>
-                                <div class="col-12 col-md-6">
-                                    <?php renderCrudField(
-                                        \$crudField,
-                                        \$modalCrudEditRecord[\$crudField['field_name']] ?? null,
-                                        \$modalCrudDropdowns
-                                    ); ?>
-                                </div>
-                            <?php endforeach; ?>
-                        </div>
-                    </div>
-                    <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-                            Annulla
-                        </button>
-                        <button type="submit" class="btn btn-warning">
-                            <i class="bi bi-check-lg me-1"></i>Salva modifica
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </div>
-    <?php endif; ?>
-
-    <div class="small text-muted mt-2">
-        Record trovati: <?= number_format(\$totalRows, 0, ',', '.') ?>
-    </div>
-</div>
-
-<?php if (\$crudEnabled && \$crudEdit && \$crudEditRecord): ?>
-<script>
-document.addEventListener('DOMContentLoaded', function () {
-    const modal = document.getElementById('crudEditModal');
-    if (!modal || !window.bootstrap || !bootstrap.Modal) return;
-    bootstrap.Modal.getOrCreateInstance(modal).show();
-});
-</script>
-<?php endif; ?>
-
-<?php if (\$modalCrudEdit && \$modalCrudEditRecord): ?>
-<script>
-document.addEventListener('DOMContentLoaded', function () {
-    const modal = document.getElementById('modalCrudEditModal');
-    if (!modal || !window.bootstrap || !bootstrap.Modal) return;
-    bootstrap.Modal.getOrCreateInstance(modal).show();
-});
-</script>
-<?php endif; ?>
-
-
-PHP;
+    return buildGeneratedPageCodeFromCanonicalTemplate($configuration);
 }
 
 function generatePagePhp(array $configuration): string
@@ -2648,6 +1234,7 @@ if ($action !== '') {
                     pvc.percorso_base,
                     pvt.IDforeign_key AS source_fk_id,
                     c.IDtabella,
+                    c.tipo AS campo_tipo,
                     c.nome AS campo_nome,
                     t.nome AS tabella_nome
                  FROM pagine_visualizzazione_campi pvc
@@ -3499,9 +2086,10 @@ if ($action !== '') {
                     'update_visible' => false,
                     'required' => false,
                     'fk' => null,
-                    'type' => (string) ($primaryField['tipo'] ?? ''),
-                    'default_value' => $primaryField['default_value'] ?? null,
-                ]];
+                            'type' => (string) ($primaryField['tipo'] ?? ''),
+                            'default_value' => $primaryField['default_value'] ?? null,
+                            'bootstrap_col' => '6',
+                        ]];
                 $addedCrudFields = [(string) $primaryField['nome'] => true];
                 $primaryKeyAlias = '';
 
@@ -3532,6 +2120,9 @@ if ($action !== '') {
                             'fk' => null,
                             'type' => (string) ($mainField['tipo'] ?? ''),
                             'default_value' => $mainField['default_value'] ?? null,
+                            'bootstrap_col' => in_array((string) ($builtField['bootstrap_col'] ?? '6'), ['3','4','6','8','12'], true)
+                                ? (string) $builtField['bootstrap_col']
+                                : '6',
                         ];
                         $addedCrudFields[$fieldName] = true;
                         continue;
@@ -3563,6 +2154,9 @@ if ($action !== '') {
                         ],
                         'type' => (string) ($mainField['tipo'] ?? ''),
                         'default_value' => $mainField['default_value'] ?? null,
+                        'bootstrap_col' => in_array((string) ($builtField['bootstrap_col'] ?? '6'), ['3','4','6','8','12'], true)
+                            ? (string) $builtField['bootstrap_col']
+                            : '6',
                     ];
                     $addedCrudFields[$localFieldName] = true;
                 }
@@ -3607,10 +2201,13 @@ if ($action !== '') {
 
             $modalConfig = null;
 
+            $generatorMetadata = resolveGeneratedPageMetadata($viewType);
+
             $configuration = [
                 'title' => $title ?: $pageName,
                 'description' => $description,
                 'view_type' => $viewType,
+                'generator_version' => $generatorMetadata['version'],
                 'sql' => $built['sql'],
                 'fields' => $built['fields'],
                 'rows_per_page' => max(1, min(500, (int) ($payload['rows_per_page'] ?? 25))),
@@ -3629,7 +2226,7 @@ if ($action !== '') {
 
             $targetPath = $paths['pages'] . DIRECTORY_SEPARATOR . $fileName;
             $configuration['generated_page_version'] = resolveNextGeneratedPageVersion($targetPath);
-            $generatedCode = $saveOnly ? '' : generatePagePhp($configuration);
+            $generatedCode = $saveOnly ? '' : repairGeneratedDisplayValueBlock(generatePagePhp($configuration));
 
             $db->beginTransaction();
 
@@ -3867,7 +2464,9 @@ if ($action !== '') {
                             (int) $field['sortable'],
                             (int) $field['searchable'],
                             $field['alignment'],
-                            normalizeVisualFormatCode((string) $field['format']),
+                            (($formatValue = trim((string) ($field['format'] ?? ''))) !== '')
+                                ? $formatValue
+                                : (defaultVisualFormatByType((string) ($field['type'] ?? $field['field_type'] ?? '')) ?: null),
                             $field['width'] !== '' ? $field['width'] : null,
                             $field['bootstrap_col'],
                             (int) $field['filter_enabled'],
@@ -4032,7 +2631,14 @@ if ($action !== '') {
 
         pannellateJsonResponse(['ok' => false, 'message' => 'Azione non riconosciuta.'], 404);
     } catch (Throwable $e) {
-        error_log('[genera_pagina_visualizzazione] ' . $e->getMessage());
+        creatorePaginaWriteErrorLog(sprintf(
+            'ECCEZIONE action=%s errore=%s file=%s riga=%d trace=%s',
+            preg_replace('/[^a-zA-Z0-9_-]/', '', $action),
+            str_replace(["\r", "\n"], ' ', $e->getMessage()),
+            $e->getFile(),
+            $e->getLine(),
+            str_replace(["\r", "\n"], ' ', $e->getTraceAsString())
+        ));
 
         $message = $e->getMessage();
         if (
@@ -4581,7 +3187,7 @@ renderPagePreviewModal();
                                            id="formulaNumberValue"
                                            class="form-control"
                                            inputmode="decimal"
-                                           placeholder="10.10">
+                                           placeholder="1.10">
                                     <button type="button"
                                             class="btn btn-outline-primary"
                                             id="formulaNumberAddButton">
@@ -4630,4 +3236,5 @@ renderPagePreviewModal();
 
 
 <?php require_once __DIR__ . '/creatore_pagina_js.php'; ?>
+
 

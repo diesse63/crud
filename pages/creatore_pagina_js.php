@@ -4,7 +4,7 @@
  *
  * Comportamento client-side minimo per la sezione iniziale di creatore_pagina.
  *
- * Versione: 10.75
+ * Versione: 1.75
  */
 
 declare(strict_types=1);
@@ -141,6 +141,55 @@ if (basename((string) ($_SERVER['SCRIPT_FILENAME'] ?? '')) === basename(__FILE__
         if (card) {
             card.classList.toggle('d-none', !label.textContent);
         }
+    }
+
+    function getDefaultNumericFormat(fieldType) {
+        const normalizedType = String(fieldType || '').toLowerCase();
+        if (['float', 'double', 'decimal'].includes(normalizedType)) {
+            return '#.##0,00';
+        }
+        if (['int', 'tinyint', 'smallint', 'mediumint', 'bigint'].includes(normalizedType)) {
+            return '#.##0';
+        }
+        return '';
+    }
+
+    function getDefaultDateTimeFormat(fieldType) {
+        const normalizedType = String(fieldType || '').toLowerCase();
+        if (normalizedType === 'date') {
+            return 'dd/mm/aaaa';
+        }
+        if (['datetime', 'timestamp'].includes(normalizedType)) {
+            return 'dd/mm/aaaa hh:mm';
+        }
+        if (normalizedType === 'time') {
+            return 'hh:mm';
+        }
+        return '';
+    }
+
+    function resolveFieldFormatValue(field) {
+        const rawFormat = String(field?.format || field?.formato_visualizzazione || '').trim();
+        if (rawFormat) {
+            return rawFormat;
+        }
+        const fieldType = field?.field_type || field?.tipo || '';
+        return getDefaultNumericFormat(fieldType) || getDefaultDateTimeFormat(fieldType);
+    }
+
+    function resolveFieldFormatForSave(field) {
+        const rawFormat = String(field?.format || field?.formato_visualizzazione || '').trim();
+        if (rawFormat) {
+            return rawFormat;
+        }
+
+        const fieldType = field?.field_type || field?.tipo || '';
+        return getDefaultNumericFormat(fieldType) || getDefaultDateTimeFormat(fieldType) || '';
+    }
+
+    function normalizeAlignmentValue(value) {
+        const normalized = String(value || '').trim().toUpperCase();
+        return ['SINISTRA', 'CENTRO', 'DESTRA'].includes(normalized) ? normalized : 'SINISTRA';
     }
 
     function removeSelectedFieldsBySourceRelation(sourceRelationId) {
@@ -437,48 +486,12 @@ if (basename((string) ($_SERVER['SCRIPT_FILENAME'] ?? '')) === basename(__FILE__
                 || (fieldSourceFk
                     ? `${fieldSourceFk}${fieldSourceFkDesc ? ' · ' + fieldSourceFkDesc : ''} -> ${fieldSourceTable || tableName}`
                     : fieldSourceTable || tableName);
+            const fieldTypeLabel = escapeHtml(rawType || 'automatico');
             const fieldVisibleTable = field?.visible_table === true ? 'checked' : '';
             const fieldVisibleCard = field?.visible_card === true ? 'checked' : '';
             const fieldVisibleModal = field?.visible_modal === true ? 'checked' : '';
-            const fieldFormat = String(field?.format || 'AUTOMATICO').toUpperCase();
-            const formatMap = (() => {
-                if (['int', 'integer', 'smallint', 'mediumint', 'bigint', 'decimal', 'numeric', 'float', 'double', 'real'].includes(rawType)) {
-                    return [
-                        'AUTOMATICO',
-                        'NUMERO',
-                        'NUMERO_MIGLIAIA',
-                        'NUMERO_1',
-                        'NUMERO_2',
-                        'NUMERO_3',
-                        'DATA_UNIX',
-                    ];
-                }
-
-                if (['date', 'datetime', 'timestamp', 'time'].includes(rawType)) {
-                    return [
-                        'AUTOMATICO',
-                        'DATA_BREVE',
-                        'DATA_ESTESA',
-                        'DATA_ITA',
-                        'DATA_ENG',
-                        'DATA_UNIX',
-                    ];
-                }
-
-                return [
-                    'AUTOMATICO',
-                    'TESTO',
-                    'TESTO_MAIUSCOLO',
-                    'TESTO_MINUSCOLO',
-                    'TESTO_TITOLO',
-                    'MAIL',
-                    'URL',
-                    'FILE',
-                ];
-            })();
-            const formatOptions = formatMap
-                .map((format) => `<option value="${format}" ${fieldFormat === format ? 'selected' : ''}>${format}</option>`)
-                .join('');
+            const fieldFormat = resolveFieldFormatValue(field);
+            const fieldAlignment = normalizeAlignmentValue(field?.alignment || field?.allineamento || 'SINISTRA');
 
             return `
                 <div class="list-group-item list-group-item-action px-0 py-2 ${variant === 'selected' ? 'bg-white' : ''}"
@@ -487,7 +500,9 @@ if (basename((string) ($_SERVER['SCRIPT_FILENAME'] ?? '')) === basename(__FILE__
                     <div class="d-flex justify-content-between align-items-start gap-2">
                         <div>
                             <div class="fw-semibold">${fieldDisplayName}</div>
-                            <div class="small text-muted">${type}</div>
+                            <div class="small text-muted">
+                                <span class="badge text-bg-light border">${fieldTypeLabel}</span>
+                            </div>
                             ${variant === 'selected' && (fieldSourceFk || fieldSourceFkDesc || fieldSourceTable)
                                 ? `<div class="small text-info">${fieldSelectedTitle}</div>`
                                 : ''}
@@ -527,8 +542,12 @@ if (basename((string) ($_SERVER['SCRIPT_FILENAME'] ?? '')) === basename(__FILE__
                             </div>
                             <div class="col-12">
                                 <label class="form-label form-label-sm mb-1">Formato</label>
-                                <select class="form-select form-select-sm" data-field-prop="format" data-field-id="${fieldId}" data-field-key="${fieldSelectionKey}">
-                                    ${formatOptions}
+                                <input type="text" class="form-control form-control-sm" data-field-prop="format" data-field-id="${fieldId}" data-field-key="${fieldSelectionKey}" value="${escapeHtml(fieldFormat)}" placeholder="dd/mm/aaaa, hh:mm:ss, #.##0,00, 00000, data unix">
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label form-label-sm mb-1">Allineamento</label>
+                                <select class="form-select form-select-sm" data-field-prop="alignment" data-field-id="${fieldId}" data-field-key="${fieldSelectionKey}">
+                                    ${['SINISTRA', 'CENTRO', 'DESTRA'].map((value) => `<option value="${value}" ${fieldAlignment === value ? 'selected' : ''}>${value}</option>`).join('')}
                                 </select>
                             </div>
                         </div>
@@ -588,7 +607,7 @@ if (basename((string) ($_SERVER['SCRIPT_FILENAME'] ?? '')) === basename(__FILE__
                             visible_table: field?.visible_table === true,
                             visible_card: field?.visible_card === true,
                             visible_modal: field?.visible_modal === true,
-                            format: field?.format || 'AUTOMATICO',
+                            format: field?.format || '',
                             source_table_name: mainTableFieldState.tableName || '',
                             table_id: Number(field?.table_id || field?.IDtabella || 0),
                         }];
@@ -621,7 +640,8 @@ if (basename((string) ($_SERVER['SCRIPT_FILENAME'] ?? '')) === basename(__FILE__
                             visible_table: field?.visible_table === true,
                             visible_card: field?.visible_card === true,
                             visible_modal: field?.visible_modal === true,
-                            format: field?.format || 'AUTOMATICO',
+                            format: field?.format || '',
+                            alignment: normalizeAlignmentValue(field?.alignment || field?.allineamento || 'SINISTRA'),
                             source_table_name: sourceRelation?.secondary_table_name || sourceRelation?.table_name || '',
                             source_fk_name: sourceRelation?.local_field_name || sourceRelation?.fk_nome || '',
                             source_fk_descrittivo: sourceRelation?.local_field_descrittivo || sourceRelation?.fk_nome_descrittivo || '',
@@ -658,9 +678,16 @@ if (basename((string) ($_SERVER['SCRIPT_FILENAME'] ?? '')) === basename(__FILE__
                     });
                 }
 
-                if (control.tagName === 'SELECT' && prop === 'format') {
-                    control.addEventListener('change', () => {
+                if (control.tagName === 'INPUT' && control.type === 'text' && prop === 'format') {
+                    control.addEventListener('input', () => {
                         target.format = control.value;
+                        scheduleSqlPreviewRefresh();
+                    });
+                }
+
+                if (control.tagName === 'SELECT' && prop === 'alignment') {
+                    control.addEventListener('change', () => {
+                        target.alignment = normalizeAlignmentValue(control.value);
                         scheduleSqlPreviewRefresh();
                     });
                 }
@@ -763,7 +790,7 @@ if (basename((string) ($_SERVER['SCRIPT_FILENAME'] ?? '')) === basename(__FILE__
                 visible_modal: field?.visible_modal === true ? 1 : 0,
                 searchable: 1,
                 sortable: 1,
-                format: String(field?.format || 'AUTOMATICO'),
+                format: resolveFieldFormatForSave(field),
                 order: index + 1,
                 source_table_name: String(field?.source_table_name || ''),
                 table_id: Number(field?.table_id || field?.source_table_id || 0),
@@ -821,7 +848,8 @@ if (basename((string) ($_SERVER['SCRIPT_FILENAME'] ?? '')) === basename(__FILE__
                 visible_modal: field?.visible_modal === true ? 1 : 0,
                 searchable: field?.searchable === true ? 1 : 0,
                 sortable: field?.sortable === true ? 1 : 0,
-                format: String(field?.format || 'AUTOMATICO'),
+                format: resolveFieldFormatForSave(field),
+                alignment: normalizeAlignmentValue(field?.alignment || field?.allineamento || 'SINISTRA'),
                 order: index + 1,
                 source_table_name: String(field?.source_table_name || ''),
                 table_id: Number(field?.table_id || field?.source_table_id || 0),
@@ -1319,6 +1347,12 @@ if (basename((string) ($_SERVER['SCRIPT_FILENAME'] ?? '')) === basename(__FILE__
 
             const payload = buildSavePayload();
             setLoadDebug(`Payload costruito: page_name=${payload.page_name} | file_name=${payload.file_name} | main_table_id=${payload.main_table_id} | fields=${payload.fields.length} | tables=${payload.tables.length}.`, 'info');
+            setLoadDebug(`Formati campo inviati: ${summarizeArray(payload.fields.slice(0, 12).map((field) => `${String(field.field_id || 0)}=${String(field.format ?? '') || '(vuoto)'}`), 12)}`, 'info');
+            setLoadDebug(`Allineamenti campo inviati: ${summarizeArray(payload.fields.slice(0, 12).map((field) => `${String(field.field_id || 0)}=${String(field.alignment ?? '') || '(vuoto)'}`), 12)}`, 'info');
+            setLoadDebug(`Dettaglio payload formato: ${summarizeArray(payload.fields.slice(0, 12).map((field) => `${String(field.field_id || 0)} inviato=${String(field.format ?? '') || '(vuoto)'}`), 12)}`, 'info');
+            setLoadDebug(`Dettaglio payload allineamento: ${summarizeArray(payload.fields.slice(0, 12).map((field) => `${String(field.field_id || 0)} inviato=${String(field.alignment ?? '') || '(vuoto)'}`), 12)}`, 'info');
+            setLoadDebug(`Allineamento selezionato prima del salvataggio: ${summarizeArray(mainTableFieldState.selectedFields.slice(0, 12).map((field) => `${String(field.id || 0)}=${String(field.alignment || field.allineamento || '') || '(vuoto)'}`), 12)}`, 'info');
+            setLoadDebug('Salvataggio configurazione in corso: i formati vengono registrati in pagine_visualizzazione_campi.formato_visualizzazione.', 'info');
             setLoadDebug(`Regole impostate: search=${Number(payload.search_enabled ? 1 : 0)} | sort=${Number(payload.sort_enabled ? 1 : 0)} | pagination=${Number(payload.pagination_enabled ? 1 : 0)} | crud=${Number(payload.crud_enabled ? 1 : 0)}.`, 'info');
             if (!payload.page_name) {
                 setLoadReportSummary([
@@ -1374,6 +1408,7 @@ if (basename((string) ($_SERVER['SCRIPT_FILENAME'] ?? '')) === basename(__FILE__
             try {
                 const data = await postCreatorAction('save_configuration', payload);
                 setLoadDebug(`Risposta backend ricevuta: configuration_id=${String(data?.configuration_id || '')} | status=${String(data?.verification?.status || '')}.`, 'info');
+                setLoadDebug(`Salvataggio configurazione completato: configuration_id=${String(data?.configuration_id || '')} | campi salvati=${payload.fields.length}.`, 'success');
                 if (window.creatorePaginaContext) {
                     window.creatorePaginaContext.configurationId = Number(data.configuration_id || window.creatorePaginaContext.configurationId || 0);
                 }
@@ -1458,6 +1493,10 @@ if (basename((string) ($_SERVER['SCRIPT_FILENAME'] ?? '')) === basename(__FILE__
                     throw new Error(loadedData?.message || 'Impossibile leggere la configurazione salvata.');
                 }
                 setLoadDebug('Configurazione salvata letta correttamente. Costruzione payload di generazione in corso...', 'info');
+                setLoadDebug(
+                    `Allineamenti letti per la generazione: ${summarizeArray((loadedData.fields || []).slice(0, 12).map((field) => `${String(field?.IDcampo || field?.id || 0)}=${String(field?.allineamento ?? field?.alignment ?? '') || '(vuoto)'}`), 12)}`,
+                    'info'
+                );
 
                 const loadedPayload = {
                     configuration_id: configurationId,
@@ -1490,11 +1529,18 @@ if (basename((string) ($_SERVER['SCRIPT_FILENAME'] ?? '')) === basename(__FILE__
                             field_id: Number(field?.IDcampo || field?.id || 0),
                             fieldId: Number(field?.IDcampo || field?.id || 0),
                             label: String(field?.etichetta || field?.label || field?.campo_nome || ''),
+                            fieldType: String(field?.campo_tipo || field?.field_type || field?.tipo || ''),
+                            tipo: String(field?.campo_tipo || field?.field_type || field?.tipo || ''),
                             visible_table: Number(field?.visibile_tabella ?? field?.visible_table ?? 0) === 1 ? 1 : 0,
                             visible_card: Number(field?.visibile_scheda ?? field?.visible_card ?? 0) === 1 ? 1 : 0,
                             searchable: Number(field?.ricercabile ?? field?.searchable ?? 0) === 1 ? 1 : 0,
                             sortable: Number(field?.ordinabile ?? field?.sortable ?? 0) === 1 ? 1 : 0,
-                            format: String(field?.formato_visualizzazione || field?.format || 'AUTOMATICO'),
+                            format: resolveFieldFormatValue({
+                                format: field?.formato_visualizzazione ?? field?.format ?? '',
+                                field_type: field?.campo_tipo || field?.field_type || field?.tipo || '',
+                                tipo: field?.campo_tipo || field?.field_type || field?.tipo || '',
+                            }),
+                            alignment: normalizeAlignmentValue(field?.allineamento || field?.alignment || 'SINISTRA'),
                             order: Number(field?.ordine || field?.order || 0),
                             source_table_name: String(field?.tabella_nome || field?.table_name || ''),
                             table_id: Number(field?.IDtabella || field?.table_id || 0),
@@ -1503,6 +1549,15 @@ if (basename((string) ($_SERVER['SCRIPT_FILENAME'] ?? '')) === basename(__FILE__
                         : [],
                 };
                 setLoadDebug(`Payload generazione costruito: page_name=${loadedPayload.page_name} | file_name=${loadedPayload.file_name} | main_table_id=${loadedPayload.main_table_id} | fields=${loadedPayload.fields.length} | tables=${loadedPayload.tables.length}.`, 'info');
+                setLoadDebug(`Formati campo inviati alla generazione: ${summarizeArray(loadedPayload.fields.slice(0, 12).map((field) => `${String(field.field_id || 0)}=${String(field.format ?? '') || '(vuoto)'}`), 12)}`, 'info');
+                setLoadDebug(`Allineamenti campo inviati alla generazione: ${summarizeArray(loadedPayload.fields.slice(0, 12).map((field) => `${String(field.field_id || 0)}=${String(field.alignment ?? '') || '(vuoto)'}`), 12)}`, 'info');
+                setLoadDebug(`Dettaglio payload generazione formato: ${summarizeArray(loadedPayload.fields.slice(0, 12).map((field) => `${String(field.field_id || 0)} inviato=${String(field.format ?? '') || '(vuoto)'}`), 12)}`, 'info');
+                setLoadDebug(`Dettaglio payload generazione allineamento: ${summarizeArray(loadedPayload.fields.slice(0, 12).map((field) => `${String(field.field_id || 0)} inviato=${String(field.alignment ?? '') || '(vuoto)'}`), 12)}`, 'info');
+                setLoadDebug(
+                    `Dettaglio campi generazione: ${summarizeArray(loadedPayload.fields.slice(0, 12).map((field) => `${String(field.field_id || 0)} | format=${String(field.format ?? '') || '(vuoto)'} | alignment=${String(field.alignment ?? '') || '(vuoto)'}`), 12)}`,
+                    'info'
+                );
+                setLoadDebug('Salvataggio configurazione prima della generazione in corso: i formati letti dal DB verranno applicati al file.', 'info');
                 setLoadDebug(`Regole di generazione: search=${Number(loadedPayload.search_enabled ? 1 : 0)} | sort=${Number(loadedPayload.sort_enabled ? 1 : 0)} | pagination=${Number(loadedPayload.pagination_enabled ? 1 : 0)} | CRUD=${Number(loadedPayload.crud_enabled ? 1 : 0)}.`, 'info');
                 setLoadReportSummary([
                     `Configurazione ${configurationId} letta correttamente.`,
@@ -1512,6 +1567,7 @@ if (basename((string) ($_SERVER['SCRIPT_FILENAME'] ?? '')) === basename(__FILE__
 
                 const data = await postCreatorAction('save_generate', loadedPayload);
                 setLoadDebug(`Risposta generazione ricevuta: configuration_id=${String(data?.configuration_id || '')} | file_name=${String(data?.file_name || '')} | file_path=${String(data?.file_path || '')}.`, 'info');
+                setLoadDebug(`Salvataggio configurazione completato prima della generazione: configuration_id=${String(data?.configuration_id || '')} | campi salvati=${loadedPayload.fields.length}.`, 'success');
                 setResultMessage(`
                     <div class="alert alert-success">
                         <strong>Generazione completata</strong><br>
@@ -1673,6 +1729,22 @@ if (basename((string) ($_SERVER['SCRIPT_FILENAME'] ?? '')) === basename(__FILE__
         setLoadDebug(`Numero campi letti: ${fields.length}`, 'info');
         setLoadDebug(`Prime 5 tabelle: ${summarizeArray(tables.slice(0, 5).map(summarizeTableDetail), 5)}`, 'info');
         setLoadDebug(`Primi 5 campi grezzi: ${summarizeArray(fields.slice(0, 5).map(summarizeObject), 5)}`, 'info');
+        setLoadDebug(
+            `Formati letti dal DB: ${summarizeArray(fields.slice(0, 12).map((field) => `${String(field?.IDcampo || field?.id || 0)}=${String(field?.formato_visualizzazione ?? field?.format ?? '') || '(vuoto)'}`), 12)}`,
+            'info'
+        );
+        setLoadDebug(
+            `Allineamenti letti dal DB: ${summarizeArray(fields.slice(0, 12).map((field) => `${String(field?.IDcampo || field?.id || 0)}=${String(field?.allineamento ?? field?.alignment ?? '') || '(vuoto)'}`), 12)}`,
+            'info'
+        );
+        setLoadDebug(
+            `Dettaglio formato DB: ${summarizeArray(fields.slice(0, 12).map((field) => `${String(field?.IDcampo || field?.id || 0)} letto=${String(field?.formato_visualizzazione ?? field?.format ?? '') || '(vuoto)'} | usato=${String(resolveFieldFormatValue(field) || '') || '(vuoto)'}`), 12)}`,
+            'info'
+        );
+        setLoadDebug(
+            `Dettaglio allineamento DB: ${summarizeArray(fields.slice(0, 12).map((field) => `${String(field?.IDcampo || field?.id || 0)} letto=${String(field?.allineamento ?? field?.alignment ?? '') || '(vuoto)'} | usato=${normalizeAlignmentValue(field?.allineamento || field?.alignment || 'SINISTRA')}`), 12)}`,
+            'info'
+        );
 
         const pageName = document.getElementById('pageName');
         const fileName = document.getElementById('fileName');
@@ -1789,7 +1861,8 @@ if (basename((string) ($_SERVER['SCRIPT_FILENAME'] ?? '')) === basename(__FILE__
                 nome: String(field?.campo_nome || field?.nome || ''),
                 field_type: String(field?.campo_tipo || field?.field_type || field?.tipo || ''),
                 tipo: String(field?.campo_tipo || field?.field_type || field?.tipo || ''),
-                format: String(field?.formato_visualizzazione || field?.format || 'AUTOMATICO'),
+                format: String(field?.formato_visualizzazione ?? field?.format ?? ''),
+                alignment: normalizeAlignmentValue(field?.allineamento || field?.alignment || 'SINISTRA'),
                 visible_table: Number(field?.visibile_tabella ?? field?.visible_table ?? 0) === 1,
                 visible_card: Number(field?.visibile_scheda ?? field?.visible_card ?? 0) === 1,
                 source_table_name: String(field?.tabella_nome || field?.source_table_name || ''),
@@ -1806,6 +1879,26 @@ if (basename((string) ($_SERVER['SCRIPT_FILENAME'] ?? '')) === basename(__FILE__
         setLoadDebug(`Campi selezionati letti dal DB: ${mainTableFieldState.selectedFields.length}.`, 'info');
         setLoadDebug(`Campi selezionati: ${summarizeArray(mainTableFieldState.selectedFields.map((field) => `${field.id}:${field.label}`), 12)}`, 'info');
         setLoadDebug(`Dettaglio campi selezionati: ${summarizeArray(mainTableFieldState.selectedFields.slice(0, 12).map(summarizeFieldDetail), 12)}`, 'info');
+        setLoadDebug(
+            `Formati ricostruiti per il rendering: ${summarizeArray(mainTableFieldState.selectedFields.slice(0, 12).map((field) => `${String(field.id || 0)}=${String(field.format || '') || '(vuoto)'}`), 12)}`,
+            'info'
+        );
+        setLoadDebug(
+            `Formato salvato -> formato usato: ${summarizeArray(mainTableFieldState.selectedFields.slice(0, 12).map((field) => `${String(field.id || 0)}=${String(field.formato_visualizzazione || field.format || '') || '(vuoto)'}`), 12)}`,
+            'info'
+        );
+        setLoadDebug(
+            `Allineamenti ricostruiti per il rendering: ${summarizeArray(mainTableFieldState.selectedFields.slice(0, 12).map((field) => `${String(field.id || 0)}=${String(field.alignment || field.allineamento || '') || '(vuoto)'}`), 12)}`,
+            'info'
+        );
+        setLoadDebug(
+            `Allineamento salvato -> allineamento usato: ${summarizeArray(mainTableFieldState.selectedFields.slice(0, 12).map((field) => `${String(field.id || 0)}=${String(field.allineamento || field.alignment || '') || '(vuoto)'}`), 12)}`,
+            'info'
+        );
+        setLoadDebug(
+            `Dettaglio ricostruzione campo: ${summarizeArray(mainTableFieldState.selectedFields.slice(0, 12).map((field) => `${String(field.id || 0)} formato=${String(field.formato_visualizzazione || field.format || '') || '(vuoto)'} | allineamento=${String(field.allineamento || field.alignment || '') || '(vuoto)'}`), 12)}`,
+            'info'
+        );
 
         mainTableFieldState.selectedFields.forEach((field) => {
             if (Number(field?.source_fk_id || 0) > 0) {

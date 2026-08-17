@@ -562,8 +562,10 @@ function buildSqlPreview(
             'visible_modal' => !empty($selectedField['visible_modal']),
             'searchable' => !empty($selectedField['searchable']),
             'sortable' => !empty($selectedField['sortable']),
-            'format' => (string) ($selectedField['format'] ?? 'AUTOMATICO'),
-            'alignment' => (string) ($selectedField['alignment'] ?? 'SINISTRA'),
+            'format' => (($value = trim((string) ($selectedField['format'] ?? ''))) !== '')
+                ? $value
+                : '',
+            'alignment' => normalizeAlignmentCode((string) ($selectedField['alignment'] ?? 'SINISTRA')),
             'width' => trim((string) ($selectedField['width'] ?? '')),
             'bootstrap_col' => in_array((string) ($selectedField['bootstrap_col'] ?? '6'), ['3','4','6','8','12'], true)
                 ? (string) $selectedField['bootstrap_col'] : '6',
@@ -730,6 +732,7 @@ function buildCrudConfiguration(
                 && empty($field['nullable'])
                 && ($field['default_value'] === null || $field['default_value'] === ''),
             'fk' => $fkByLocalField[(int) $field['id']] ?? null,
+            'bootstrap_col' => '6',
         ];
     }
 
@@ -763,6 +766,18 @@ function generatePagePhp(array $configuration): string
     $crudAdd = !empty($configuration['crud_add']) ? 'true' : 'false';
     $crudEdit = !empty($configuration['crud_edit']) ? 'true' : 'false';
     $crudDelete = !empty($configuration['crud_delete']) ? 'true' : 'false';
+    $generatorLabel = match ((string) ($configuration['view_type'] ?? '')) {
+        'SCHEDA_TABELLARE' => 'Scheda Tabellare',
+        'MASTER_DETAIL' => 'Master Detail',
+        default => 'Scheda Singola',
+    };
+    $generatorVersion = (string) ($configuration['generator_version'] ?? match ($generatorLabel) {
+        'Scheda Tabellare' => '1.10',
+        'Master Detail' => '1.8',
+        default => '1.37',
+    });
+    $generatedPageVersion = (string) ($configuration['generated_page_version'] ?? '1.0');
+    $generatedAt = date('Y-m-d H:i:s');
 
     $singleCardModalPhp = generatedSingleCardModalPhp();
     $tableRowCardModalPhp = generatedTableRowCardModalPhp();
@@ -770,8 +785,19 @@ function generatePagePhp(array $configuration): string
     return <<<PHP
 <?php
 /**
+ * ============================================================
  * File generato automaticamente dall'applicazione CRUD.
- * Non contiene logica di configurazione: visualizza esclusivamente i dati.
+ *
+ * Generatore : {$generatorLabel}
+ * Versione creatore : {$generatorVersion}
+ * Versione pagina   : {$generatedPageVersion}
+ * Creato il  : {$generatedAt}
+ * Modificato il: {$generatedAt}
+ *
+ * ATTENZIONE:
+ * questo file è generato automaticamente; eventuali modifiche
+ * manuali possono essere sovrascritte alla successiva generazione.
+ * ============================================================
  */
 
 if (session_status() === PHP_SESSION_NONE) {
@@ -779,6 +805,10 @@ if (session_status() === PHP_SESSION_NONE) {
 }
 
 require_once dirname(__DIR__) . '/db.php';
+\$generatedBy = '{$generatorLabel}';
+\$generatedVersion = '{$generatorVersion}';
+\$generatedPageVersion = '{$generatedPageVersion}';
+\$generatedAt = '{$generatedAt}';
 
 /*
  * La pagina può essere:
@@ -865,15 +895,48 @@ function crudNormalizeValue(array \$field, mixed \$value): mixed
         return null;
     }
 
+    \$fieldType = strtolower((string) (\$field['field_type'] ?? \$field['type'] ?? 'text'));
     if (\$value === '') {
+        if (in_array(\$fieldType, ['date', 'datetime', 'timestamp', 'time', 'int', 'tinyint', 'smallint', 'mediumint', 'bigint', 'float', 'double', 'decimal'], true)) {
+            return null;
+        }
         return '';
     }
 
-    return match (\$field['field_type']) {
-        'int', 'tinyint', 'smallint', 'mediumint', 'bigint' => (int) \$value,
-        'float', 'double', 'decimal' => (float) str_replace(',', '.', (string) \$value),
-        default => \$value,
-    };
+    \$numericTypes = ['int', 'tinyint', 'smallint', 'mediumint', 'bigint', 'float', 'double', 'decimal'];
+
+    if (in_array(\$fieldType, \$numericTypes, true)) {
+        \$normalized = preg_replace('/\s+/', '', (string) \$value);
+        if (\$normalized === null) {
+            \$normalized = (string) \$value;
+        }
+
+        \$commaPos = strrpos(\$normalized, ',');
+        \$dotPos = strrpos(\$normalized, '.');
+
+        if (\$commaPos !== false && \$dotPos !== false) {
+            if (\$commaPos > \$dotPos) {
+                \$normalized = str_replace('.', '', \$normalized);
+                \$normalized = str_replace(',', '.', \$normalized);
+            } else {
+                \$normalized = str_replace(',', '', \$normalized);
+            }
+        } elseif (\$commaPos !== false) {
+            \$normalized = str_replace('.', '', \$normalized);
+            \$normalized = str_replace(',', '.', \$normalized);
+        }
+
+        if (!is_numeric(\$normalized)) {
+            \$normalized = preg_replace('/[^0-9\.\-]/', '', \$normalized);
+        }
+
+        return match (\$fieldType) {
+            'int', 'tinyint', 'smallint', 'mediumint', 'bigint' => (int) \$normalized,
+            default => (float) \$normalized,
+        };
+    }
+
+    return \$value;
 }
 
 function crudRedirectUrl(string \$messageCode): string
@@ -893,6 +956,27 @@ function crudRedirectUrl(string \$messageCode): string
     );
 
     \$query['crud_message'] = \$messageCode;
+
+    return \$path . '?' . http_build_query(\$query);
+}
+
+function crudRedirectRecordUrl(string \$messageCode, mixed \$recordValue): string
+{
+    \$requestUri = (string) (\$_SERVER['REQUEST_URI'] ?? '');
+    \$path = parse_url(\$requestUri, PHP_URL_PATH);
+
+    if (!is_string(\$path) || \$path === '') {
+        \$path = basename((string) (\$_SERVER['PHP_SELF'] ?? 'index.php'));
+    }
+
+    \$query = \$_GET;
+    unset(
+        \$query['crud_message'],
+        \$query['edit']
+    );
+
+    \$query['crud_message'] = \$messageCode;
+    \$query['record'] = \$recordValue;
 
     return \$path . '?' . http_build_query(\$query);
 }
@@ -978,7 +1062,7 @@ if (\$crudEnabled) {
                     . ' VALUES (' . implode(', ', array_fill(0, count(\$columns), '?')) . ')';
 
                 \$db->execute(\$sqlInsert, \$values);
-                header('Location: ' . crudRedirectUrl('inserted'));
+                header('Location: ' . crudRedirectRecordUrl('inserted', \$db->lastInsertId()));
                 exit;
             }
 
@@ -1004,7 +1088,7 @@ if (\$crudEnabled) {
                     [...\$values, \$pkValue]
                 );
 
-                header('Location: ' . crudRedirectUrl('updated'));
+                header('Location: ' . crudRedirectRecordUrl('updated', \$pkValue));
                 exit;
             }
         } catch (Throwable \$crudException) {
@@ -1172,23 +1256,105 @@ function displayValue(mixed \$value, string \$format, string \$basePath = ''): s
 
     \$format = trim((string) \$format);
     if (\$format === '') {
-        return nl2br(htmlspecialchars((string) \$value, ENT_QUOTES, 'UTF-8'));
+        return htmlspecialchars((string) \$value, ENT_QUOTES, 'UTF-8');
     }
 
-    switch (\$format) {
-        case '#.##0':
-            return htmlspecialchars(number_format((float) \$value, 0, ',', '.'), ENT_QUOTES, 'UTF-8');
-        case '#.##0,00':
-            return htmlspecialchars(number_format((float) \$value, 2, ',', '.'), ENT_QUOTES, 'UTF-8');
-        case 'dd/mm/yyyy':
-            \$timestamp = strtotime((string) \$value);
-            return \$timestamp ? date('d/m/Y', \$timestamp) : htmlspecialchars((string) \$value, ENT_QUOTES, 'UTF-8');
-        case 'yyyy-mm-dd hh:mm:ss':
-            \$timestamp = strtotime((string) \$value);
-            return \$timestamp ? date('Y-m-d H:i:s', \$timestamp) : htmlspecialchars((string) \$value, ENT_QUOTES, 'UTF-8');
-        case 'hh:mm:ss':
-            \$timestamp = strtotime((string) \$value);
-            return \$timestamp ? date('H:i:s', \$timestamp) : htmlspecialchars((string) \$value, ENT_QUOTES, 'UTF-8');
+    \$normalizedFormat = strtolower(trim(\$format));
+    \$compactFormat = str_replace(' ', '', \$normalizedFormat);
+
+    \$normalizeNumericValue = static function (mixed \$numericValue): ?float {
+        if (\$numericValue === null || \$numericValue === '') {
+            return null;
+        }
+
+        \$normalized = preg_replace('/\\s+/', '', (string) \$numericValue);
+        if (\$normalized === null || \$normalized === '') {
+            return null;
+        }
+
+        \$commaPos = strrpos(\$normalized, ',');
+        \$dotPos = strrpos(\$normalized, '.');
+
+        if (\$commaPos !== false && \$dotPos !== false) {
+            if (\$commaPos > \$dotPos) {
+                \$normalized = str_replace('.', '', \$normalized);
+                \$normalized = str_replace(',', '.', \$normalized);
+            } else {
+                \$normalized = str_replace(',', '', \$normalized);
+            }
+        } elseif (\$commaPos !== false) {
+            \$normalized = str_replace('.', '', \$normalized);
+            \$normalized = str_replace(',', '.', \$normalized);
+        }
+
+        \$normalized = preg_replace('/[^0-9\\.\\-]/', '', \$normalized);
+        if (\$normalized === null || \$normalized === '' || !is_numeric(\$normalized)) {
+            return null;
+        }
+
+        return (float) \$normalized;
+    };
+
+    \$normalizeDateValue = static function (mixed \$dateValue, array \$formats): ?DateTimeImmutable {
+        \$rawDate = trim((string) \$dateValue);
+        if (\$rawDate === '') {
+            return null;
+        }
+
+        foreach (\$formats as \$phpFormat) {
+            \$dateTime = DateTimeImmutable::createFromFormat(\$phpFormat, \$rawDate);
+            if (\$dateTime instanceof DateTimeImmutable) {
+                \$errors = DateTimeImmutable::getLastErrors();
+                if ((\$errors['warning_count'] ?? 0) === 0 && (\$errors['error_count'] ?? 0) === 0) {
+                    return \$dateTime;
+                }
+            }
+        }
+
+        \$timestamp = strtotime(\$rawDate);
+        return \$timestamp ? (new DateTimeImmutable())->setTimestamp(\$timestamp) : null;
+    };
+
+    if (str_contains(\$compactFormat, '#')) {
+        \$decimals = 0;
+        if (preg_match('/[,.](0+)$/', \$compactFormat, \$matches)) {
+            \$decimals = strlen(\$matches[1]);
+        }
+
+        \$numericValue = \$normalizeNumericValue(\$value);
+        return htmlspecialchars(number_format(\$numericValue ?? (float) \$value, \$decimals, ',', '.'), ENT_QUOTES, 'UTF-8');
+    }
+
+    if (in_array(\$compactFormat, ['dd/mm/aaaa', 'dd/mm/yyyy'], true)) {
+        \$dateTime = \$normalizeDateValue(\$value, ['d/m/Y', 'd/m/y', 'Y-m-d', 'd-m-Y', 'd.m.Y']);
+        return \$dateTime ? \$dateTime->format('d/m/Y') : htmlspecialchars((string) \$value, ENT_QUOTES, 'UTF-8');
+    }
+
+    if (in_array(\$compactFormat, ['dd/mm/aaaahh:mm', 'dd/mm/yyyyhh:mm'], true)) {
+        \$dateTime = \$normalizeDateValue(\$value, ['d/m/Y H:i', 'd/m/Y H:i:s', 'Y-m-d H:i:s', 'Y-m-d H:i', 'Y-m-d\TH:i']);
+        \$formatted = \$dateTime ? \$dateTime->format('d/m/Y H:i') : (string) \$value;
+        return htmlspecialchars(\$formatted, ENT_QUOTES, 'UTF-8');
+    }
+
+    if (in_array(\$compactFormat, ['aaaa-mm-gg', 'yyyy-mm-dd'], true)) {
+        \$dateTime = \$normalizeDateValue(\$value, ['Y-m-d', 'd/m/Y', 'd/m/y', 'd-m-Y', 'd.m.Y']);
+        \$formatted = \$dateTime ? \$dateTime->format('Y-m-d') : (string) \$value;
+        return htmlspecialchars(\$formatted, ENT_QUOTES, 'UTF-8');
+    }
+
+    if (in_array(\$compactFormat, ['hh:mm', 'hh:mm:ss'], true)) {
+        \$dateTime = \$normalizeDateValue(\$value, ['H:i:s', 'H:i', 'h:i:s A', 'h:i A']);
+        if (!\$dateTime) {
+            return htmlspecialchars((string) \$value, ENT_QUOTES, 'UTF-8');
+        }
+
+        \$formatted = \$compactFormat === 'hh:mm'
+            ? \$dateTime->format('H:i')
+            : \$dateTime->format('H:i:s');
+        return \$formatted;
+    }
+
+    switch (\$normalizedFormat) {
         case 'utente@esempio.i':
             return '<a href="mailto:' . htmlspecialchars(\$raw, ENT_QUOTES, 'UTF-8') . '">'
                 . htmlspecialchars(\$raw, ENT_QUOTES, 'UTF-8') . '</a>';
@@ -1205,39 +1371,33 @@ function displayValue(mixed \$value, string \$format, string \$basePath = ''): s
             return (bool) \$value
                 ? '<span class="badge bg-success">Sì</span>'
                 : '<span class="badge bg-secondary">No</span>';
-        case 'NUMERO':
-            return htmlspecialchars(number_format((float) \$value, 2, ',', '.'), ENT_QUOTES, 'UTF-8');
-        case 'VALUTA':
-            return htmlspecialchars(number_format((float) \$value, 2, ',', '.') . ' €', ENT_QUOTES, 'UTF-8');
-        case 'DATA':
-            \$timestamp = strtotime((string) \$value);
-            return \$timestamp ? date('d/m/Y', \$timestamp) : htmlspecialchars((string) \$value, ENT_QUOTES, 'UTF-8');
-        case 'DATA_ORA':
-            \$timestamp = strtotime((string) \$value);
-            return \$timestamp ? date('d/m/Y H:i', \$timestamp) : htmlspecialchars((string) \$value, ENT_QUOTES, 'UTF-8');
-        case 'BOOLEANO':
+        case 'valuta':
+            \$numericValue = \$normalizeNumericValue(\$value);
+            \$formatted = number_format(\$numericValue ?? (float) \$value, 2, ',', '.') . ' €';
+            return htmlspecialchars(\$formatted, ENT_QUOTES, 'UTF-8');
+        case 'booleano':
             return (bool) \$value
                 ? '<span class="badge bg-success">Sì</span>'
                 : '<span class="badge bg-secondary">No</span>';
-        case 'JSON':
+        case 'json':
             \$decoded = json_decode((string) \$value, true);
             \$formatted = \$decoded === null
                 ? (string) \$value
                 : json_encode(\$decoded, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
             return '<pre class="mb-0 small">' . htmlspecialchars(\$formatted, ENT_QUOTES, 'UTF-8') . '</pre>';
-        case 'IMMAGINE':
+        case 'immagine':
             return '<a href="' . \$safeResource . '" target="_blank" rel="noopener">'
                 . '<img src="' . \$safeResource . '" alt="" class="img-fluid rounded border" '
                 . 'style="max-height:180px;object-fit:contain"></a>';
-        case 'FILE':
+        case 'file':
             \$name = basename(parse_url(\$resource, PHP_URL_PATH) ?: \$resource);
             return '<a class="btn btn-sm btn-outline-primary" href="' . \$safeResource
                 . '" target="_blank" rel="noopener" download><i class="bi bi-download me-1"></i>'
                 . htmlspecialchars(\$name, ENT_QUOTES, 'UTF-8') . '</a>';
-        case 'URL':
+        case 'url':
             return '<a href="' . \$safeResource . '" target="_blank" rel="noopener">'
                 . htmlspecialchars(\$raw, ENT_QUOTES, 'UTF-8') . '</a>';
-        case 'EMAIL':
+        case 'email':
             return '<a href="mailto:' . htmlspecialchars(\$raw, ENT_QUOTES, 'UTF-8') . '">'
                 . htmlspecialchars(\$raw, ENT_QUOTES, 'UTF-8') . '</a>';
         default:
@@ -1274,19 +1434,19 @@ function defaultFormatByType(string \$type): string
     \$type = strtolower(trim(\$type));
 
     if (in_array(\$type, ['int', 'integer', 'smallint', 'mediumint', 'bigint', 'decimal', 'numeric', 'float', 'double', 'real'], true)) {
-        return in_array(\$type, ['decimal', 'numeric', 'float', 'double', 'real'], true) ? '0,00' : '0';
+        return in_array(\$type, ['decimal', 'numeric', 'float', 'double', 'real'], true) ? '#.##0,00' : '#.##0';
     }
 
     if (\$type === 'date') {
-        return '1970-01-01';
+        return 'dd/mm/aaaa';
     }
 
     if (in_array(\$type, ['datetime', 'timestamp'], true)) {
-        return '1970-01-01 00:00:00';
+        return 'dd/mm/aaaa hh:mm';
     }
 
     if (\$type === 'time') {
-        return '00:00:00';
+        return 'hh:mm';
     }
 
     if (in_array(\$type, ['email', 'mail'], true)) {
@@ -1312,10 +1472,16 @@ function defaultFormatByType(string \$type): string
     return '';
 }
 
+function normalizeAlignmentCode(string \$value): string
+{
+    \$value = strtoupper(trim(\$value));
+    return in_array(\$value, ['SINISTRA', 'CENTRO', 'DESTRA'], true) ? \$value : 'SINISTRA';
+}
+
 function resolveFieldFormat(array \$field): string
 {
     \$rawFormat = trim((string) (\$field['format'] ?? ''));
-    if (\$rawFormat !== '' && strcasecmp(\$rawFormat, 'AUTOMATICO') !== 0) {
+    if (\$rawFormat !== '') {
         return \$rawFormat;
     }
 
@@ -1330,6 +1496,12 @@ function resolveFieldFormat(array \$field): string
 function buildQuery(array \$overrides = []): string
 {
     \$query = array_merge(\$_GET, \$overrides);
+    if (!array_key_exists('crud_message', \$overrides)) {
+        unset(\$query['crud_message']);
+    }
+    if (!array_key_exists('edit', \$overrides)) {
+        unset(\$query['edit']);
+    }
     foreach (\$query as \$key => \$value) {
         if (\$value === null || \$value === '') {
             unset(\$query[\$key]);
@@ -1341,7 +1513,12 @@ function buildQuery(array \$overrides = []): string
 
 <div class="container-fluid py-3 generated-view-page">
     <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
-        <h3 class="mb-0"><?= htmlspecialchars(\$pageTitle, ENT_QUOTES, 'UTF-8') ?></h3>
+        <div class="d-flex flex-wrap align-items-center gap-2">
+            <h3 class="mb-0"><?= htmlspecialchars(\$pageTitle, ENT_QUOTES, 'UTF-8') ?></h3>
+            <span class="badge text-bg-secondary">
+                File v<?= htmlspecialchars(\$generatedPageVersion, ENT_QUOTES, 'UTF-8') ?>
+            </span>
+        </div>
 
         <div class="d-flex flex-wrap gap-2">
             <?php if (\$crudEnabled && \$crudAdd): ?>
@@ -1364,7 +1541,7 @@ function buildQuery(array \$overrides = []): string
         <?php if (\$searchEnabled): ?>
             <form method="get" class="d-flex gap-2">
                 <?php foreach (\$_GET as \$key => \$value): ?>
-                    <?php if (!in_array(\$key, ['q', 'p'], true)): ?>
+                    <?php if (!in_array(\$key, ['q', 'p', 'crud_message', 'edit'], true)): ?>
                         <input type="hidden"
                                name="<?= htmlspecialchars((string) \$key, ENT_QUOTES, 'UTF-8') ?>"
                                value="<?= htmlspecialchars((string) \$value, ENT_QUOTES, 'UTF-8') ?>">
@@ -1502,8 +1679,7 @@ function buildQuery(array \$overrides = []): string
                 </div>
 
                 <div class="card-body">
-                    <div class="mb-2"><span class="badge text-bg-info">Generatore v9.6</span></div>
-<div class="row g-3">
+                    <div class="row g-3">
                         <?php foreach (\$fields as \$field): ?>
                             <?php if (empty(\$field['visible_card'])) continue; ?>
 
@@ -1732,7 +1908,7 @@ function buildQuery(array \$overrides = []): string
             return;
         }
 
-        \$type = (string) \$field['field_type'];
+        \$type = strtolower((string) (\$field['field_type'] ?? \$field['type'] ?? 'text'));
 
         if (\$type === 'text' || \$type === 'json') {
             echo '<textarea class="form-control" rows="3" name="crud[' . \$safeName . ']" '
@@ -1752,23 +1928,31 @@ function buildQuery(array \$overrides = []): string
         \$inputType = match (\$type) {
             'date' => 'date',
             'datetime', 'timestamp' => 'datetime-local',
-            'int', 'smallint', 'bigint', 'decimal', 'float', 'double' => 'number',
+            'int', 'smallint', 'bigint' => 'number',
+            'decimal', 'float', 'double' => 'text',
             default => 'text',
         };
 
+        if (\$type === 'date' && \$value) {
+            \$timestamp = strtotime(str_replace('/', '-', (string) \$value));
+            if (\$timestamp) {
+                \$safeValue = date('Y-m-d', \$timestamp);
+            }
+        }
+
         if (in_array(\$type, ['datetime', 'timestamp'], true) && \$value) {
-            \$timestamp = strtotime((string) \$value);
+            \$timestamp = strtotime(str_replace('/', '-', (string) \$value));
             if (\$timestamp) {
                 \$safeValue = date('Y-m-d\TH:i', \$timestamp);
             }
         }
 
-        \$step = in_array(\$type, ['decimal', 'float', 'double'], true)
-            ? ' step="any"'
+        \$inputExtraAttributes = in_array(\$type, ['decimal', 'float', 'double'], true)
+            ? ' inputmode="decimal"'
             : '';
 
         echo '<input type="' . \$inputType . '" class="form-control" name="crud['
-            . \$safeName . ']" value="' . \$safeValue . '"' . \$step . ' ' . \$required . '>';
+            . \$safeName . ']" value="' . \$safeValue . '"' . \$inputExtraAttributes . ' ' . \$required . '>';
     }
     ?>
 
@@ -1788,7 +1972,12 @@ function buildQuery(array \$overrides = []): string
                         <div class="row g-3">
                             <?php foreach (\$crudConfig['fields'] as \$crudField): ?>
                                 <?php if (empty(\$crudField['editable'])) continue; ?>
-                                <div class="col-12 col-md-6">
+                                <?php if (isset(\$crudField['insert_visible']) && empty(\$crudField['insert_visible'])) continue; ?>
+                                <?php
+                                \$crudBootstrapCol = (int) (\$crudField['bootstrap_col'] ?? 6);
+                                if (\$crudBootstrapCol < 1 || \$crudBootstrapCol > 12) \$crudBootstrapCol = 6;
+                                ?>
+                                <div class="col-12 col-md-<?= \$crudBootstrapCol ?>">
                                     <?php renderCrudField(\$crudField, null, \$crudDropdowns); ?>
                                 </div>
                             <?php endforeach; ?>
@@ -1835,7 +2024,12 @@ function buildQuery(array \$overrides = []): string
                         <div class="row g-3">
                             <?php foreach (\$crudConfig['fields'] as \$crudField): ?>
                                 <?php if (empty(\$crudField['editable'])) continue; ?>
-                                <div class="col-12 col-md-6">
+                                <?php if (isset(\$crudField['update_visible']) && empty(\$crudField['update_visible'])) continue; ?>
+                                <?php
+                                \$crudBootstrapCol = (int) (\$crudField['bootstrap_col'] ?? 6);
+                                if (\$crudBootstrapCol < 1 || \$crudBootstrapCol > 12) \$crudBootstrapCol = 6;
+                                ?>
+                                <div class="col-12 col-md-<?= \$crudBootstrapCol ?>">
                                     <?php renderCrudField(
                                         \$crudField,
                                         \$crudEditRecord[\$crudField['field_name']] ?? null,
@@ -1864,6 +2058,161 @@ function buildQuery(array \$overrides = []): string
     </div>
 </div>
 PHP;
+}
+
+function repairGeneratedDisplayValueBlock(string $generatedCode): string
+{
+    $pattern = '/function displayValue\\(mixed\\s*,\\s*string\\s*,\\s*string\\s*=\\s*\'\'\\): string.*?(?=\\nfunction linkedValue\\(array \\$field, array \\$row\\): string)/s';
+    $replacement = <<<'PHP'
+function displayValue(mixed $value, string $format, string $basePath = ''): string
+{
+    if ($value === null || $value === '') {
+        return '<span class="text-muted">—</span>';
+    }
+
+    $raw = (string) $value;
+    $resource = $basePath !== ''
+        ? rtrim($basePath, '/') . '/' . ltrim($raw, '/')
+        : $raw;
+    $safeResource = htmlspecialchars($resource, ENT_QUOTES, 'UTF-8');
+
+    $format = trim((string) $format);
+    if ($format === '') {
+        return htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8');
+    }
+
+    $normalizedFormat = strtolower(trim($format));
+    $compactFormat = str_replace(' ', '', $normalizedFormat);
+
+    $normalizeNumericValue = static function (mixed $numericValue): ?float {
+        if ($numericValue === null || $numericValue === '') {
+            return null;
+        }
+
+        $normalized = preg_replace('/\s+/', '', (string) $numericValue);
+        if ($normalized === null || $normalized === '') {
+            return null;
+        }
+
+        $commaPos = strrpos($normalized, ',');
+        $dotPos = strrpos($normalized, '.');
+
+        if ($commaPos !== false && $dotPos !== false) {
+            if ($commaPos > $dotPos) {
+                $normalized = str_replace('.', '', $normalized);
+                $normalized = str_replace(',', '.', $normalized);
+            } else {
+                $normalized = str_replace(',', '', $normalized);
+            }
+        } elseif ($commaPos !== false) {
+            $normalized = str_replace('.', '', $normalized);
+            $normalized = str_replace(',', '.', $normalized);
+        }
+
+        $normalized = preg_replace('/[^0-9\\.\\-]/', '', $normalized);
+        if ($normalized === null || $normalized === '' || !is_numeric($normalized)) {
+            return null;
+        }
+
+        return (float) $normalized;
+    };
+
+    $normalizeDateValue = static function (mixed $dateValue, array $formats): ?DateTimeImmutable {
+        $rawDate = trim((string) $dateValue);
+        if ($rawDate === '') {
+            return null;
+        }
+
+        foreach ($formats as $phpFormat) {
+            $dateTime = DateTimeImmutable::createFromFormat($phpFormat, $rawDate);
+            if ($dateTime instanceof DateTimeImmutable) {
+                $errors = DateTimeImmutable::getLastErrors();
+                if (($errors['warning_count'] ?? 0) === 0 && ($errors['error_count'] ?? 0) === 0) {
+                    return $dateTime;
+                }
+            }
+        }
+
+        $timestamp = strtotime($rawDate);
+        return $timestamp ? (new DateTimeImmutable())->setTimestamp($timestamp) : null;
+    };
+
+    if (str_contains($compactFormat, '#')) {
+        $decimals = 0;
+        if (preg_match('/[,.](0+)$/', $compactFormat, $matches)) {
+            $decimals = strlen($matches[1]);
+        }
+
+        $numericValue = $normalizeNumericValue($value);
+        return htmlspecialchars(number_format($numericValue ?? (float) $value, $decimals, ',', '.'), ENT_QUOTES, 'UTF-8');
+    }
+
+    if (in_array($compactFormat, ['dd/mm/aaaa', 'dd/mm/yyyy'], true)) {
+        $dateTime = $normalizeDateValue($value, ['d/m/Y', 'd/m/y', 'Y-m-d', 'd-m-Y', 'd.m.Y']);
+        return $dateTime ? $dateTime->format('d/m/Y') : htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8');
+    }
+
+    if (in_array($compactFormat, ['dd/mm/aaaahh:mm', 'dd/mm/yyyyhh:mm'], true)) {
+        $dateTime = $normalizeDateValue($value, ['d/m/Y H:i', 'd/m/Y H:i:s', 'Y-m-d H:i:s', 'Y-m-d H:i', 'Y-m-d\TH:i']);
+        $formatted = $dateTime ? $dateTime->format('d/m/Y H:i') : (string) $value;
+        return htmlspecialchars($formatted, ENT_QUOTES, 'UTF-8');
+    }
+
+    if (in_array($compactFormat, ['aaaa-mm-gg', 'yyyy-mm-dd'], true)) {
+        $dateTime = $normalizeDateValue($value, ['Y-m-d', 'd/m/Y', 'd/m/y', 'd-m-Y', 'd.m.Y']);
+        $formatted = $dateTime ? $dateTime->format('Y-m-d') : (string) $value;
+        return htmlspecialchars($formatted, ENT_QUOTES, 'UTF-8');
+    }
+
+    if (in_array($compactFormat, ['hh:mm', 'hh:mm:ss'], true)) {
+        $dateTime = $normalizeDateValue($value, ['H:i:s', 'H:i', 'h:i:s A', 'h:i A']);
+        if (!$dateTime) {
+            return htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8');
+        }
+
+        $formatted = $compactFormat === 'hh:mm'
+            ? $dateTime->format('H:i')
+            : $dateTime->format('H:i:s');
+        return htmlspecialchars($formatted, ENT_QUOTES, 'UTF-8');
+    }
+
+    switch ($normalizedFormat) {
+        case 'valuta':
+            $numericValue = $normalizeNumericValue($value);
+            return htmlspecialchars(number_format($numericValue ?? (float) $value, 2, ',', '.') . ' €', ENT_QUOTES, 'UTF-8');
+        case 'booleano':
+            return (bool) $value
+                ? '<span class="badge bg-success">Sì</span>'
+                : '<span class="badge bg-secondary">No</span>';
+        case 'json':
+            $decoded = json_decode((string) $value, true);
+            $formatted = $decoded === null
+                ? (string) $value
+                : json_encode($decoded, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+            return '<pre class="mb-0 small">' . htmlspecialchars($formatted, ENT_QUOTES, 'UTF-8') . '</pre>';
+        case 'immagine':
+            return '<a href="' . $safeResource . '" target="_blank" rel="noopener">'
+                . '<img src="' . $safeResource . '" alt="" class="img-fluid rounded border" '
+                . 'style="max-height:180px;object-fit:contain"></a>';
+        case 'file':
+            $name = basename(parse_url($resource, PHP_URL_PATH) ?: $resource);
+            return '<a class="btn btn-sm btn-outline-primary" href="' . $safeResource
+                . '" target="_blank" rel="noopener" download><i class="bi bi-download me-1"></i>'
+                . htmlspecialchars($name, ENT_QUOTES, 'UTF-8') . '</a>';
+        case 'url':
+            return '<a href="' . $safeResource . '" target="_blank" rel="noopener">'
+                . htmlspecialchars($raw, ENT_QUOTES, 'UTF-8') . '</a>';
+        case 'email':
+            return '<a href="mailto:' . htmlspecialchars($raw, ENT_QUOTES, 'UTF-8') . '">'
+                . htmlspecialchars($raw, ENT_QUOTES, 'UTF-8') . '</a>';
+        default:
+            return nl2br(htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8'));
+    }
+}
+
+PHP;
+
+    return preg_replace($pattern, $replacement, $generatedCode) ?? $generatedCode;
 }
 
 /* =========================
@@ -2488,7 +2837,7 @@ if ($action !== '') {
                             'field_id' => (int) $technicalField['id'],
                             'table_id' => (int) $technicalField['IDtabella'],
                             'label' => $technicalField['nome'],
-                            'format' => 'AUTOMATICO',
+                            'format' => '',
                             'visible_table' => 0,
                             'visible_card' => 0,
                             'visible_modal' => 0,
@@ -2620,7 +2969,9 @@ if ($action !== '') {
                         'field_name' => $field['nome'],
                         'field_type' => $field['tipo'],
                         'label' => trim((string) ($modalField['label'] ?? $field['nome'])),
-                        'format' => (string) ($modalField['format'] ?? 'AUTOMATICO'),
+                        'format' => (($value = trim((string) ($modalField['format'] ?? ''))) !== '')
+                            ? $value
+                            : '',
                         'bootstrap_col' => (string) ($modalField['bootstrapCol'] ?? $modalField['bootstrap_col'] ?? '6'),
                         'base_path' => trim((string) ($modalField['basePath'] ?? $modalField['base_path'] ?? '')),
                         'filter_enabled' => !empty($modalField['filterEnabled'] ?? $modalField['filter_enabled']),
@@ -2676,7 +3027,7 @@ if ($action !== '') {
             }
 
             $targetPath = $paths['pages'] . DIRECTORY_SEPARATOR . $fileName;
-            $generatedCode = generatePagePhp($configuration);
+            $generatedCode = repairGeneratedDisplayValueBlock(generatePagePhp($configuration));
 
             $db->beginTransaction();
 
@@ -3375,7 +3726,7 @@ if ($progettoId > 0) {
         return;
     }
 
-    const GENERATOR_VERSION = '9.4';
+    const GENERATOR_VERSION = '1.4';
     const AJAX_ENDPOINT = new URL(
         'pages/genera_pagina_visualizzazione.php',
         window.location.href
@@ -3680,14 +4031,12 @@ if ($progettoId > 0) {
             searchable: Number(field.ricercabile) === 1,
             sortable: Number(field.ordinabile) === 1,
             format: resolveFieldFormat({
-                format: field.formato_visualizzazione,
-                customFormat: field.formato_visualizzazione,
+                format: field.formato_visualizzazione || '',
+                customFormat: '',
                 fieldType: field.campo_tipo || field.tipo || '',
                 tipo: field.campo_tipo || field.tipo || ''
             }),
-            customFormat: String(field.formato_visualizzazione || '').startsWith('CUSTOM:')
-                ? String(field.formato_visualizzazione).slice(7)
-                : '',
+            customFormat: '',
             alignment: field.allineamento || 'SINISTRA',
             width: field.larghezza_colonna || '',
             bootstrapCol: String(field.larghezza_bootstrap || '6'),
@@ -3870,7 +4219,7 @@ if ($progettoId > 0) {
     }
 
     function parseFieldFormat(formatValue) {
-        const format = String(formatValue || 'AUTOMATICO');
+        const format = String(formatValue || '');
         if (format.startsWith('CUSTOM:')) {
             return {
                 base: 'PERSONALIZZATO',
@@ -4188,7 +4537,7 @@ if ($progettoId > 0) {
         selectedFields.innerHTML = state.selectedFields.map((item, index) => {
             const parsedFormat = parseFieldFormat(item.format);
             const typeDefault = defaultFormatByType(item.fieldType || item.tipo || '');
-            const customValue = escapeHtml(item.customFormat || parsedFormat.custom || typeDefault);
+            const formatValue = escapeHtml(item.format || '');
             return `
             <div class="selected-item"
                  draggable="true"
@@ -4219,8 +4568,8 @@ if ($progettoId > 0) {
                         <input type="text"
                                class="form-control form-control-sm field-option"
                                data-index="${index}"
-                               data-key="customFormat"
-                               value="${customValue}"
+                               data-key="format"
+                               value="${formatValue}"
                                placeholder="dd/mm/aaaa, hh:mm:ss, #.##0,00, 00000, data unix">
                     </div>
                     <div class="col-md-6">
@@ -4326,23 +4675,7 @@ if ($progettoId > 0) {
                 const key = event.currentTarget.dataset.key;
                 if (key === 'format') {
                     const value = event.currentTarget.value;
-                    if (value.startsWith('CUSTOM:')) {
-                        state.selectedFields[index].format = `CUSTOM:${state.selectedFields[index].customFormat || value.slice(7)}`;
-                        state.selectedFields[index].customFormat = state.selectedFields[index].customFormat || value.slice(7);
-                    } else if (value === 'PERSONALIZZATO') {
-                        state.selectedFields[index].format = `CUSTOM:${state.selectedFields[index].customFormat || ''}`;
-                    } else {
-                        state.selectedFields[index].format = value;
-                        state.selectedFields[index].customFormat = '';
-                    }
-                    renderSelectedFields();
-                    refreshPreviewDebounced();
-                    return;
-                }
-
-                if (key === 'customFormat') {
-                    state.selectedFields[index].customFormat = event.currentTarget.value;
-                    state.selectedFields[index].format = `CUSTOM:${event.currentTarget.value}`;
+                    state.selectedFields[index].format = value;
                     refreshPreviewDebounced();
                     return;
                 }
@@ -4388,7 +4721,7 @@ if ($progettoId > 0) {
 
     function previewSampleValue(item, rowNumber) {
         const resolvedFormat = resolveFieldFormat(item);
-        const rawFormat = String(resolvedFormat || 'AUTOMATICO');
+        const rawFormat = String(resolvedFormat || '');
         const customFormat = rawFormat.startsWith('CUSTOM:') ? rawFormat.slice(7) : String(item.customFormat || '');
         const format = rawFormat.startsWith('CUSTOM:') ? 'PERSONALIZZATO' : rawFormat.toUpperCase();
         const fieldType = String(item.fieldType || item.tipo || '').toLowerCase();
@@ -4427,18 +4760,6 @@ if ($progettoId > 0) {
                 minimumFractionDigits: 2,
                 maximumFractionDigits: 2
             })} €`;
-        }
-
-        if (format === 'NUMERO') {
-            return (100 + rowNumber * 17).toLocaleString('it-IT');
-        }
-
-        if (format === 'DATA') {
-            return `${String(10 + rowNumber).padStart(2, '0')}/07/2026`;
-        }
-
-        if (format === 'DATA_ORA') {
-            return `${String(10 + rowNumber).padStart(2, '0')}/07/2026 ${String(8 + rowNumber).padStart(2, '0')}:30`;
         }
 
         if (format === 'BOOLEANO') {

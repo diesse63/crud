@@ -14,17 +14,18 @@ Il formato segue i principi di Keep a Changelog.
 ### Modificato
 
 - Isolata in `creatore_pagina.php` la scrittura materiale della pagina generata in una funzione dedicata, mantenendo invariata la costruzione basata sulle opzioni lette e il salvataggio nella cartella progetto.
-- In `creatore_pagina.php` la pannellata mostra ora sia la versione del creatore di pagina utilizzato sia la versione pagina nel formato `1.1.1`.
+- In `creatore_pagina.php` la pannellata mostra ora sia la versione del creatore di pagina utilizzato sia la versione pagina nel formato `1.1`.
 - Rifiniti i layout mobile di `schema_db` e `cartella_progetto` per ridurre l'ingombro su schermi piccoli e migliorare la leggibilita delle sezioni laterali e delle liste file.
 - Rifinito il layout mobile dei generatori `genera_pagina_visualizzazione` e `scheda_singola`, limitando l'overflow orizzontale dell'area campi selezionati e rendendo più compatta la spaziatura su schermi piccoli.
 - Suddivisa la cartella progetto in due sottovoci: `Allineamento file` e `Allineamento DB`, mantenendo le funzioni attuali e separando la visualizzazione della pannellata.
 - Suddivisi in due righe i pulsanti della modale "Pubblica progetto via HTTPS": i comandi DB sono ora separati dagli altri comandi di pubblicazione.
 - Rimosso il pulsante "Simula" dalla modale di pubblicazione HTTPS e aggiunto il comando "Disassocia" per scollegare il progetto dalla cartella remota.
-- Aggiunto `deploy_receiver.php` v1.2.4 con supporto all'azione remota `disassociate`, che rimuove solo il manifest `.deploy.json` dopo verifica UUID.
+- Aggiunto `deploy_receiver.php` v1.2 con supporto all'azione remota `disassociate`, che rimuove solo il manifest `.deploy.json` dopo verifica UUID.
 - Esteso l'allineamento del DB destinatario alla gestione delle tabelle extra con opzione dedicata di eliminazione e conferma dettagliata prima della pubblicazione.
 
 ### Corretto
 
+- Reso coerente il versioning centralizzato su formato `major.minor`: `versioning.php` normalizza e incrementa solo due segmenti, e la pannellata legge la versione in quel formato.
 - Ripristinato in `tabella_pannellate.php` l'apertura della modifica tramite `modifica_pagina.php`, così il click su una pagina esistente ricarica la configurazione completa prima di passare al creatore.
 - In `cartella_progetto.php` la rinomina di un file aggiorna ora anche i riferimenti nel menu Home gestito da `genera_home.php`, quando il file è presente come voce di pagina.
 - Corretto nel HEREDOC di `buildGeneratedPageCode` l'inserimento di `{$dropdownCode}`, così il file generato espande davvero il blocco SQL dei dropdown FK invece di scrivere testo letterale.
@@ -126,7 +127,7 @@ Il formato segue i principi di Keep a Changelog.
 ### Corretto
 - Resa piu robusta la generazione della modifica CRUD nella scheda singola: il record in modifica viene ora recuperato anche tramite `modal_edit` e il redirect pulisce correttamente il parametro, evitando stati bloccati dopo il salvataggio.
 
-## [10.2.0] - 2026-07-25
+## [1.2] - 2026-07-25
 
 ### Aggiunto
 
