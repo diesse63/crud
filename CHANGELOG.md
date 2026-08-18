@@ -25,6 +25,9 @@ Il formato segue i principi di Keep a Changelog.
 
 ### Corretto
 
+- Allineata la lettura e il salvataggio della visibilità campi al tipo pagina: con `IDTipo = 1` la scheda usa `visibile_scheda`, mentre `visibile_tabella` viene considerato solo per `IDTipo = 2`.
+- Nella pagina generata da `genera_pagina_visualizzazione.php` la vista `scheda_singola` usa ora il flag `visible_card` per i campi visibili della scheda, mantenendo `visible_table` per le viste tabellari.
+- In `creatore_pagina_js.php`, quando `pagine_visualizzazione.IDtipo = 1`, il caricamento della configurazione legge il flag effettivo della scheda da `pagine_visualizzazione_campi.visibile_scheda` invece che da `visibile_tabella`.
 - Reso coerente il versioning centralizzato su formato `major.minor`: `versioning.php` normalizza e incrementa solo due segmenti, e la pannellata legge la versione in quel formato.
 - Ripristinato in `tabella_pannellate.php` l'apertura della modifica tramite `modifica_pagina.php`, così il click su una pagina esistente ricarica la configurazione completa prima di passare al creatore.
 - In `cartella_progetto.php` la rinomina di un file aggiorna ora anche i riferimenti nel menu Home gestito da `genera_home.php`, quando il file è presente come voce di pagina.

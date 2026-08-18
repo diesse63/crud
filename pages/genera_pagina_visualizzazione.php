@@ -1123,7 +1123,9 @@ if (\$crudEnabled) {
 
 \$visibleFields = array_values(array_filter(
     \$fields,
-    fn(array \$field): bool => !empty(\$field['visible_table'])
+    fn(array \$field): bool => \$viewType === 'SCHEDA_SINGOLA'
+        ? !empty(\$field['visible_card'])
+        : !empty(\$field['visible_table'])
 ));
 
 \$searchableAliases = [];

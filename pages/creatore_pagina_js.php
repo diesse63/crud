@@ -4,7 +4,9 @@
  *
  * Comportamento client-side minimo per la sezione iniziale di creatore_pagina.
  *
- * Versione: 1.75
+ * Versione: 1.76
+ * Aggiornato: 2026-08-17
+ * - Allineate le etichette Scheda e Tabella ai rispettivi flag di visibilita.
  */
 
 declare(strict_types=1);
@@ -190,6 +192,11 @@ if (basename((string) ($_SERVER['SCRIPT_FILENAME'] ?? '')) === basename(__FILE__
     function normalizeAlignmentValue(value) {
         const normalized = String(value || '').trim().toUpperCase();
         return ['SINISTRA', 'CENTRO', 'DESTRA'].includes(normalized) ? normalized : 'SINISTRA';
+    }
+
+    function isSinglePageType(page) {
+        return Number(page?.IDtipo || page?.tipo_id || 0) === 1
+            || String(page?.tipo_visualizzazione || page?.view_type || '').trim().toUpperCase() === 'SCHEDA_SINGOLA';
     }
 
     function removeSelectedFieldsBySourceRelation(sourceRelationId) {
@@ -523,13 +530,13 @@ if (basename((string) ($_SERVER['SCRIPT_FILENAME'] ?? '')) === basename(__FILE__
                                     <div class="col-4">
                                         <div class="form-check">
                                             <input class="form-check-input" type="checkbox" data-field-prop="visible_table" data-field-id="${fieldId}" data-field-key="${fieldSelectionKey}" ${fieldVisibleTable}>
-                                            <label class="form-check-label">Scheda</label>
+                                            <label class="form-check-label">Tabella</label>
                                         </div>
                                     </div>
                                     <div class="col-4">
                                         <div class="form-check">
                                             <input class="form-check-input" type="checkbox" data-field-prop="visible_card" data-field-id="${fieldId}" data-field-key="${fieldSelectionKey}" ${fieldVisibleCard}>
-                                            <label class="form-check-label">Tabella</label>
+                                            <label class="form-check-label">Scheda</label>
                                         </div>
                                     </div>
                                     <div class="col-4">
@@ -785,8 +792,8 @@ if (basename((string) ($_SERVER['SCRIPT_FILENAME'] ?? '')) === basename(__FILE__
             fields: mainTableFieldState.selectedFields.map((field, index) => ({
                 field_id: Number(field?.id || 0),
                 label: String(field?.label || field?.nome || ''),
-                visible_table: field?.visible_table === true ? 1 : 0,
-                visible_card: field?.visible_card === true ? 1 : 0,
+                visible_table: Number(document.getElementById('tipoId')?.value || 0) === 2 && field?.visible_table === true ? 1 : 0,
+                visible_card: Number(document.getElementById('tipoId')?.value || 0) === 1 && field?.visible_card === true ? 1 : 0,
                 visible_modal: field?.visible_modal === true ? 1 : 0,
                 searchable: 1,
                 sortable: 1,
@@ -843,8 +850,8 @@ if (basename((string) ($_SERVER['SCRIPT_FILENAME'] ?? '')) === basename(__FILE__
             fields: mainTableFieldState.selectedFields.map((field, index) => ({
                 field_id: Number(field?.id || 0),
                 label: String(field?.label || field?.nome || ''),
-                visible_table: field?.visible_table === true ? 1 : 0,
-                visible_card: field?.visible_card === true ? 1 : 0,
+                visible_table: Number(tipoId?.value || 0) === 2 && field?.visible_table === true ? 1 : 0,
+                visible_card: Number(tipoId?.value || 0) === 1 && field?.visible_card === true ? 1 : 0,
                 visible_modal: field?.visible_modal === true ? 1 : 0,
                 searchable: field?.searchable === true ? 1 : 0,
                 sortable: field?.sortable === true ? 1 : 0,
@@ -1531,8 +1538,12 @@ if (basename((string) ($_SERVER['SCRIPT_FILENAME'] ?? '')) === basename(__FILE__
                             label: String(field?.etichetta || field?.label || field?.campo_nome || ''),
                             fieldType: String(field?.campo_tipo || field?.field_type || field?.tipo || ''),
                             tipo: String(field?.campo_tipo || field?.field_type || field?.tipo || ''),
-                            visible_table: Number(field?.visibile_tabella ?? field?.visible_table ?? 0) === 1 ? 1 : 0,
-                            visible_card: Number(field?.visibile_scheda ?? field?.visible_card ?? 0) === 1 ? 1 : 0,
+                            visible_table: isSinglePageType(loadedData.page)
+                                ? 0
+                                : (Number(field?.visibile_tabella ?? field?.visible_table ?? 0) === 1 ? 1 : 0),
+                            visible_card: isSinglePageType(loadedData.page)
+                                ? Number(field?.visibile_scheda ?? field?.visible_card ?? 0) === 1 ? 1 : 0
+                                : 0,
                             searchable: Number(field?.ricercabile ?? field?.searchable ?? 0) === 1 ? 1 : 0,
                             sortable: Number(field?.ordinabile ?? field?.sortable ?? 0) === 1 ? 1 : 0,
                             format: resolveFieldFormatValue({
@@ -1845,6 +1856,7 @@ if (basename((string) ($_SERVER['SCRIPT_FILENAME'] ?? '')) === basename(__FILE__
         setLoadDebug(`Relazioni selezionate: ${summarizeArray(Array.from(mainTableRelationState.selectedRelationIds))}`, 'info');
         setLoadDebug(`Dettaglio relazioni: ${summarizeArray(mainTableRelationState.relations.slice(0, 10).map(summarizeRelationDetail), 10)}`, 'info');
 
+        const loadedIsSinglePageType = isSinglePageType(page);
         mainTableFieldState.selectedFields = fields
             .filter((field) => selectedFieldRowIds.has(Number(field?.field_row_id || field?.id || 0)))
             .map((field, index) => ({
@@ -1863,8 +1875,12 @@ if (basename((string) ($_SERVER['SCRIPT_FILENAME'] ?? '')) === basename(__FILE__
                 tipo: String(field?.campo_tipo || field?.field_type || field?.tipo || ''),
                 format: String(field?.formato_visualizzazione ?? field?.format ?? ''),
                 alignment: normalizeAlignmentValue(field?.allineamento || field?.alignment || 'SINISTRA'),
-                visible_table: Number(field?.visibile_tabella ?? field?.visible_table ?? 0) === 1,
-                visible_card: Number(field?.visibile_scheda ?? field?.visible_card ?? 0) === 1,
+                visible_table: loadedIsSinglePageType
+                    ? false
+                    : Number(field?.visibile_tabella ?? field?.visible_table ?? 0) === 1,
+                visible_card: loadedIsSinglePageType
+                    ? Number(field?.visibile_scheda ?? field?.visible_card ?? 0) === 1
+                    : false,
                 source_table_name: String(field?.tabella_nome || field?.source_table_name || ''),
                 source_table_id: Number(field?.IDtabella || field?.table_id || 0),
                 table_id: Number(field?.IDtabella || field?.table_id || 0),
