@@ -180,27 +180,15 @@ if (!function_exists('projectSchemaHasIndexOnColumns')) {
 
 if (!function_exists('projectExtractFileVersion')) {
     function projectExtractFileVersion(string $filePath): string {
-        if (!is_file($filePath) || !is_readable($filePath)) {
-            return '';
-        }
+        $metadata = crudExtractGeneratedFileMetadataFromFile($filePath);
 
-        $handle = @fopen($filePath, 'rb');
-        if ($handle === false) {
-            return '';
-        }
+        return $metadata['file_version'] ?? '';
+    }
+}
 
-        $content = (string)fread($handle, 4096);
-        fclose($handle);
-
-        if ($content === '') {
-            return '';
-        }
-
-        if (preg_match('/^\s*\*?\s*Versione(?:\s+pagina)?\s*:\s*([0-9]+\.[0-9]+)/mi', $content, $matches)) {
-            return crudVersionNormalize((string) $matches[1]);
-        }
-
-        return '';
+if (!function_exists('projectExtractFileVersionMetadata')) {
+    function projectExtractFileVersionMetadata(string $filePath): array {
+        return crudExtractGeneratedFileMetadataFromFile($filePath);
     }
 }
 
@@ -3582,11 +3570,16 @@ if ($progetto_id) {
                 : ($visualization_descriptions_by_name[$item] ?? '');
         }
 
+        $version_metadata = is_dir($full_item_path)
+            ? ['creator_version' => '', 'page_version' => '', 'file_version' => '']
+            : projectExtractFileVersionMetadata($full_item_path);
+
         $items[] = [
             'name' => $item,
             'is_dir' => is_dir($full_item_path),
             'description' => $description,
-            'version' => is_dir($full_item_path) ? '' : projectExtractFileVersion($full_item_path),
+            'creator_version' => $version_metadata['creator_version'] ?? '',
+            'file_version' => $version_metadata['file_version'] ?? '',
             'size' => is_dir($full_item_path) ? '-' : round(filesize($full_item_path) / 1024, 2) . ' KB',
             'mtime' => date("d/m/Y H:i", filemtime($full_item_path)),
             'rel_link' => ($rel_path ? $rel_path . '/' : '') . $item
@@ -3594,6 +3587,11 @@ if ($progetto_id) {
     }
 
     $file_content = "";
+    $selected_file_version_metadata = [
+        'creator_version' => '',
+        'page_version' => '',
+        'file_version' => '',
+    ];
     $cartella_view = strtolower(trim((string)($_GET['view'] ?? 'files')));
     if (!in_array($cartella_view, ['files', 'db'], true)) {
         $cartella_view = 'files';
@@ -3607,6 +3605,7 @@ if ($progetto_id) {
         $view_path = resolveProjectPath($root_path, $selected_file);
         if ($view_path && file_exists($view_path) && !is_dir($view_path)) {
             $file_content = file_get_contents($view_path);
+            $selected_file_version_metadata = projectExtractFileVersionMetadata($view_path);
         }
     }
 ?>
@@ -4086,7 +4085,8 @@ if ($progetto_id) {
                 <tr>
                     <th>Nome</th>
                     <th>Descrizione</th>
-                    <th style="width: 140px;">Versione</th>
+                    <th style="width: 140px;">Versione creator</th>
+                    <th style="width: 140px;">Versione file</th>
                     <th style="width: 120px;">Dimensione</th>
                     <th style="width: 180px;">Modifica</th>
                     <th class="file-actions">Azioni</th>
@@ -4094,7 +4094,7 @@ if ($progetto_id) {
             </thead>
             <tbody>
                 <?php if (empty($items)): ?>
-                    <tr><td colspan="6" class="text-center py-4 text-muted">Cartella vuota.</td></tr>
+                    <tr><td colspan="7" class="text-center py-4 text-muted">Cartella vuota.</td></tr>
                 <?php else: 
                     usort($items, function($a, $b) { return $b['is_dir'] - $a['is_dir']; });
                     foreach ($items as $item): 
@@ -4112,7 +4112,8 @@ if ($progetto_id) {
                             <?= htmlspecialchars($item['name']) ?>
                         </td>
                         <td class="text-muted small"><?= htmlspecialchars($item['description'] ?: '-') ?></td>
-                        <td class="text-muted small"><?= htmlspecialchars($item['version'] ?: '-') ?></td>
+                        <td class="text-muted small"><?= htmlspecialchars($item['creator_version'] ?: '-', ENT_QUOTES, 'UTF-8') ?></td>
+                        <td class="text-muted small"><?= htmlspecialchars($item['file_version'] ?: '-', ENT_QUOTES, 'UTF-8') ?></td>
                         <td class="text-muted small"><?= $item['size'] ?></td>
                         <td class="text-muted small"><?= $item['mtime'] ?></td>
                         <td class="file-actions" onclick="event.stopPropagation();">
@@ -4141,7 +4142,11 @@ if ($progetto_id) {
     <?php if ($selected_file && $file_content !== ""): ?>
         <div class="viewer-box">
             <div class="viewer-label">
-                <span><i class="bi bi-file-code me-2"></i> <?= htmlspecialchars(basename($selected_file)) ?></span>
+                <div class="d-flex flex-wrap align-items-center gap-2">
+                    <span><i class="bi bi-file-code me-2"></i> <?= htmlspecialchars(basename($selected_file)) ?></span>
+                    <span class="badge text-bg-light">Creator <?= htmlspecialchars($selected_file_version_metadata['creator_version'] ?: '-', ENT_QUOTES, 'UTF-8') ?></span>
+                    <span class="badge text-bg-secondary">File <?= htmlspecialchars($selected_file_version_metadata['file_version'] ?: '-', ENT_QUOTES, 'UTF-8') ?></span>
+                </div>
                 <div class="viewer-label-actions">
                     <button type="button" class="btn btn-sm btn-outline-light js-copy-code" data-copy-target="fileCodeViewer">
                         <i class="bi bi-clipboard me-1"></i>Copia codice

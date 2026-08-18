@@ -412,20 +412,11 @@ function pageVersionLabel(array $row): string
         return '-';
     }
 
-    $content = @file_get_contents($resolvedPath);
-    if ($content === false) {
-        return '-';
-    }
+    $metadata = crudExtractGeneratedFileMetadataFromFile($resolvedPath);
 
-    if (preg_match('/^\s*\*\s*Versione pagina\s*:\s*([0-9]+\.[0-9]+)/mi', $content, $matches)) {
-        return crudVersionNormalize((string) $matches[1]);
-    }
-
-    if (preg_match('/\$generatedPageVersion\s*=\s*[\'"]([0-9]+\.[0-9]+)[\'"];/i', $content, $matches)) {
-        return crudVersionNormalize((string) $matches[1]);
-    }
-
-    return '-';
+    return $metadata['page_version'] !== ''
+        ? $metadata['page_version']
+        : ($metadata['file_version'] !== '' ? $metadata['file_version'] : '-');
 }
 
 function creatorVersionLabel(array $row): string
@@ -440,57 +431,27 @@ function creatorVersionLabel(array $row): string
         return '-';
     }
 
-    $content = @file_get_contents($resolvedPath);
-    if ($content === false) {
-        return '-';
-    }
+    $metadata = crudExtractGeneratedFileMetadataFromFile($resolvedPath);
 
-    if (preg_match('/^\s*\*\s*Versione creatore\s*:\s*([0-9]+\.[0-9]+)/mi', $content, $matches)) {
-        return crudVersionNormalize((string) $matches[1]);
-    }
-
-    if (preg_match('/\$generatedVersion\s*=\s*[\'"]([0-9]+\.[0-9]+)[\'"];/i', $content, $matches)) {
-        return crudVersionNormalize((string) $matches[1]);
-    }
-
-    return '-';
+    return $metadata['creator_version'] !== '' ? $metadata['creator_version'] : '-';
 }
-function creatorSourceVersion(): string
+function creatorSourceVersion(?array $row = null): string
 {
-    static $cachedVersion = null;
-    if ($cachedVersion !== null) {
-        return $cachedVersion;
-    }
-
     $creatorFile = __DIR__ . '/creatore_pagina.php';
-    if (!is_file($creatorFile) || !is_readable($creatorFile)) {
-        $cachedVersion = crudVersionNormalize('1.2');
-        return $cachedVersion;
-    }
+    $typeCode = strtoupper(trim((string) ($row['tipo_visualizzazione'] ?? 'SCHEDA_SINGOLA')));
 
-    $content = @file_get_contents($creatorFile);
-    if ($content === false) {
-        $cachedVersion = crudVersionNormalize('1.2');
-        return $cachedVersion;
-    }
-
-    if (preg_match('/\* Generatore Scheda Singola - versione\s*([0-9]+\.[0-9]+)/i', $content, $matches)) {
-        $cachedVersion = crudVersionNormalize((string) $matches[1]);
-        return $cachedVersion;
-    }
-
-    $cachedVersion = crudVersionNormalize('1.2');
-    return $cachedVersion;
+    return crudExpectedGeneratorVersionForType($typeCode, $creatorFile);
 }
-function creatorVersionIconClass(string $version): string
+function creatorVersionIconClass(string $version, string $expectedVersion): string
 {
-    $normalizedVersion = crudVersionNormalize($version, '');
-    if ($normalizedVersion === '-') {
+    $version = trim($version);
+    if ($version === '' || $version === '-') {
         return 'text-secondary';
     }
 
-    $latestCreatorVersion = creatorSourceVersion();
-    if ($normalizedVersion === $latestCreatorVersion) {
+    $normalizedVersion = crudVersionNormalize($version, '1.0');
+    $expectedCreatorVersion = crudVersionNormalize($expectedVersion, '1.0');
+    if ($normalizedVersion === $expectedCreatorVersion) {
         return 'text-success';
     }
 
@@ -576,6 +537,7 @@ function creatorVersionIconClass(string $version): string
                         }
                         $creatorVersion = creatorVersionLabel($row);
                         $pageVersion = pageVersionLabel($row);
+                        $expectedCreatorVersion = creatorSourceVersion($row);
                         $status = pageStatusLabel($row);
                         $transmission = pageTransmissionLabel($row, $pageDeployConfig);
                         $editUrl = 'index.php?page=creatore_pagina&mode=edit&configuration_id=' . (int) ($row['id'] ?? 0) . '&t=' . $cacheBuster;
@@ -593,7 +555,7 @@ function creatorVersionIconClass(string $version): string
                                 'UTF-8'
                             ) ?></td>
                             <td><?= htmlspecialchars($typeLabel, ENT_QUOTES, 'UTF-8') ?></td>
-                            <td><span class="badge bg-light text-dark border"><i class="bi bi-circle-fill <?= htmlspecialchars(creatorVersionIconClass($creatorVersion), ENT_QUOTES, 'UTF-8') ?> me-1" aria-hidden="true"></i><?= htmlspecialchars($creatorVersion, ENT_QUOTES, 'UTF-8') ?></span></td>
+                            <td><span class="badge bg-light text-dark border"><i class="bi bi-circle-fill <?= htmlspecialchars(creatorVersionIconClass($creatorVersion, $expectedCreatorVersion), ENT_QUOTES, 'UTF-8') ?> me-1" aria-hidden="true"></i><?= htmlspecialchars($creatorVersion, ENT_QUOTES, 'UTF-8') ?></span></td>
                             <td><span class="badge text-bg-secondary"><?= htmlspecialchars($pageVersion, ENT_QUOTES, 'UTF-8') ?></span></td>
                             <td><span class="badge <?= htmlspecialchars($status['class'], ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars($status['label'], ENT_QUOTES, 'UTF-8') ?></span></td>
                             <td><span class="badge <?= htmlspecialchars($transmission['class'], ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars($transmission['label'], ENT_QUOTES, 'UTF-8') ?></span></td>

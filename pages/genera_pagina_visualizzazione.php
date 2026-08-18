@@ -21,6 +21,7 @@ if (session_status() === PHP_SESSION_NONE) {
 }
 
 require_once __DIR__ . '/../db.php';
+require_once __DIR__ . '/versioning.php';
 
 
 $progettoId   = isset($_SESSION['progetto_id']) ? (int) $_SESSION['progetto_id'] : 0;
@@ -772,12 +773,16 @@ function generatePagePhp(array $configuration): string
         'MASTER_DETAIL' => 'Master Detail',
         default => 'Scheda Singola',
     };
-    $generatorVersion = (string) ($configuration['generator_version'] ?? match ($generatorLabel) {
+    $generatorVersion = crudVersionNormalize((string) ($configuration['generator_version'] ?? match ($generatorLabel) {
         'Scheda Tabellare' => '1.10',
         'Master Detail' => '1.8',
         default => '1.37',
-    });
-    $generatedPageVersion = (string) ($configuration['generated_page_version'] ?? '1.0');
+    }));
+    $generatedPageVersion = crudVersionForceMajor(
+        (string) ($configuration['generated_page_version'] ?? CRUD_FIXED_VERSION_MAJOR . '.0'),
+        CRUD_FIXED_VERSION_MAJOR,
+        0
+    );
     $generatedAt = date('Y-m-d H:i:s');
 
     $singleCardModalPhp = generatedSingleCardModalPhp();
@@ -1892,6 +1897,33 @@ function buildQuery(array \$overrides = []): string
                 bootstrap.Collapse.getOrCreateInstance(target, { toggle: false }).toggle();
             });
         });
+        </script>
+    <?php endif; ?>
+
+    <?php if (\$pageTypeId === 2): ?>
+        <script>
+        (() => {
+            const closeOtherOpenModals = currentModal => {
+                document.querySelectorAll('.modal.show').forEach(openModal => {
+                    if (openModal === currentModal) return;
+                    bootstrap.Modal.getOrCreateInstance(openModal).hide();
+                });
+            };
+
+            document.addEventListener('show.bs.modal', event => {
+                closeOtherOpenModals(event.target);
+            });
+
+            document.addEventListener('hidden.bs.modal', () => {
+                if (document.querySelector('.modal.show')) return;
+
+                document.querySelectorAll('.modal-backdrop').forEach(backdrop => {
+                    backdrop.remove();
+                });
+                document.body.classList.remove('modal-open');
+                document.body.style.removeProperty('padding-right');
+            });
+        })();
         </script>
     <?php endif; ?>
 

@@ -906,6 +906,180 @@ function buildCrudConfiguration(
     ];
 }
 
+function buildCrudValidationResult(
+    Database $db,
+    int $projectId,
+    array $payload
+): array {
+    $crudEnabled = !empty($payload['crud_enabled']);
+    $requestedActions = [
+        'add' => !empty($payload['crud_add']),
+        'edit' => !empty($payload['crud_edit']),
+        'delete' => !empty($payload['crud_delete']),
+    ];
+    $selectedTables = (array) ($payload['tables'] ?? []);
+    $selectedFields = (array) ($payload['fields'] ?? []);
+
+    if (!$crudEnabled) {
+        return [
+            'status' => 'DISABLED',
+            'message' => 'CRUD non abilitato.',
+            'requested_actions' => $requestedActions,
+            'applicable_actions' => [
+                'add' => false,
+                'edit' => false,
+                'delete' => false,
+            ],
+            'blocked_actions' => [],
+            'errors' => [],
+            'warnings' => [],
+            'infos' => ['Attivare "Abilita CRUD" per eseguire il controllo di applicabilità.'],
+            'crud_available' => false,
+        ];
+    }
+
+    $selectedActionNames = array_keys(array_filter($requestedActions));
+    if (!$selectedActionNames) {
+        return [
+            'status' => 'INVALID',
+            'message' => 'Nessuna azione CRUD selezionata.',
+            'requested_actions' => $requestedActions,
+            'applicable_actions' => [
+                'add' => false,
+                'edit' => false,
+                'delete' => false,
+            ],
+            'blocked_actions' => [],
+            'errors' => ['Selezionare almeno una tra Aggiungi, Modifica e Cancella.'],
+            'warnings' => [],
+            'infos' => [],
+            'crud_available' => false,
+        ];
+    }
+
+    $crudConfiguration = buildCrudConfiguration(
+        $db,
+        $projectId,
+        (int) ($payload['main_table_id'] ?? 0),
+        $selectedFields,
+        $selectedTables
+    );
+
+    if (empty($crudConfiguration['available'])) {
+        return [
+            'status' => 'INVALID',
+            'message' => 'CRUD non applicabile.',
+            'requested_actions' => $requestedActions,
+            'applicable_actions' => [
+                'add' => false,
+                'edit' => false,
+                'delete' => false,
+            ],
+            'blocked_actions' => $selectedActionNames,
+            'errors' => [
+                'Configurazione CRUD non valida: '
+                . (string) ($crudConfiguration['reason'] ?? 'errore non specificato') . '.'
+            ],
+            'warnings' => [],
+            'infos' => [],
+            'crud_available' => false,
+        ];
+    }
+
+    $mainTableId = (int) ($payload['main_table_id'] ?? 0);
+    $relationsByFk = [];
+    foreach (pannellateLoadRelations($db, $projectId, $mainTableId) as $relation) {
+        $relationsByFk[(int) ($relation['fk_id'] ?? 0)] = $relation;
+    }
+
+    $joinTypes = [];
+    $leftJoinSafeCount = 0;
+    $leftJoinUnsafeCount = 0;
+    foreach ($selectedTables as $selectedTable) {
+        $joinType = strtoupper((string) ($selectedTable['join_type'] ?? 'LEFT'));
+        if (!in_array($joinType, ['LEFT', 'INNER'], true)) {
+            $joinType = 'LEFT';
+        }
+        $joinTypes[] = $joinType;
+
+        if ($joinType !== 'LEFT') {
+            continue;
+        }
+
+        $fkId = (int) ($selectedTable['fk_id'] ?? 0);
+        $relation = $relationsByFk[$fkId] ?? null;
+        $isSafeLookupJoin = is_array($relation)
+            && (string) ($relation['direction'] ?? '') === 'OUT'
+            && (int) ($relation['main_table_id'] ?? 0) === $mainTableId;
+
+        if ($isSafeLookupJoin) {
+            $leftJoinSafeCount++;
+        } else {
+            $leftJoinUnsafeCount++;
+        }
+    }
+
+    $hasLeftJoin = in_array('LEFT', $joinTypes, true);
+    $hasInnerJoin = in_array('INNER', $joinTypes, true);
+    $applicableActions = $requestedActions;
+    $blockedActions = [];
+    $warnings = [];
+    $infos = [];
+    $errors = [];
+
+    if ($hasLeftJoin && $leftJoinUnsafeCount > 0) {
+        foreach ($selectedActionNames as $actionName) {
+            $applicableActions[$actionName] = false;
+        }
+        $blockedActions = $selectedActionNames;
+        $errors[] = 'La query contiene almeno una LEFT JOIN: secondo le regole progetto la pagina va considerata principalmente di sola visualizzazione.';
+        $warnings[] = 'Disabilitare Inserimento, Modifica e Cancella oppure rivedere la struttura JOIN.';
+    } elseif ($hasLeftJoin && $leftJoinSafeCount > 0) {
+        $warnings[] = 'La query contiene LEFT JOIN usate come lookup descrittive sulla tabella principale: il CRUD completo resta applicabile solo alla tabella principale.';
+        $infos[] = 'Le tabelle collegate in LEFT JOIN vengono usate per mostrare descrizioni leggibili e non vengono aggiornate dalle operazioni CRUD.';
+    } elseif ($hasInnerJoin) {
+        $warnings[] = 'Le azioni CRUD sono applicabili solo alla tabella principale; le tabelle collegate via INNER JOIN restano di supporto alla visualizzazione.';
+    } else {
+        $infos[] = 'Nessuna JOIN rilevata: il CRUD puo essere applicato alla tabella principale.';
+    }
+
+    $primaryKeyFieldName = (string) ($crudConfiguration['primary_key']['field_name'] ?? '');
+    if ($primaryKeyFieldName !== '') {
+        $infos[] = 'Chiave primaria rilevata correttamente: ' . $primaryKeyFieldName . '.';
+    }
+
+    $applicableSelectedActions = [];
+    foreach ($selectedActionNames as $actionName) {
+        if (!empty($applicableActions[$actionName])) {
+            $applicableSelectedActions[] = $actionName;
+        }
+    }
+
+    $status = 'VALID';
+    $message = 'Selezione CRUD applicabile.';
+    if ($blockedActions && $applicableSelectedActions) {
+        $status = 'PARTIAL';
+        $message = 'Selezione CRUD applicabile solo in parte.';
+    } elseif ($blockedActions) {
+        $status = 'INVALID';
+        $message = 'Selezione CRUD non applicabile.';
+    }
+
+    return [
+        'status' => $status,
+        'message' => $message,
+        'requested_actions' => $requestedActions,
+        'applicable_actions' => $applicableActions,
+        'blocked_actions' => $blockedActions,
+        'errors' => $errors,
+        'warnings' => $warnings,
+        'infos' => $infos,
+        'crud_available' => true,
+        'primary_key' => $crudConfiguration['primary_key'] ?? null,
+        'table_name' => (string) ($crudConfiguration['table_name'] ?? ''),
+    ];
+}
+
 
 function resolveGeneratedPageMetadata(string $viewType): array
 {
@@ -1966,6 +2140,19 @@ if ($action !== '') {
             pannellateJsonResponse(['ok' => true, 'sql' => $built['sql']]);
         }
 
+        if ($action === 'validate_crud') {
+            $payload = json_decode((string) file_get_contents('php://input'), true);
+            if (!is_array($payload)) {
+                pannellateJsonResponse(['ok' => false, 'message' => 'Dati non validi.'], 400);
+            }
+
+            $validation = buildCrudValidationResult($db, $progettoId, $payload);
+            pannellateJsonResponse([
+                'ok' => true,
+                'validation' => $validation,
+            ]);
+        }
+
         if ($action === 'save_generate' || $action === 'save_configuration') {
             $saveOnly = $action === 'save_configuration';
             $payload = json_decode((string) file_get_contents('php://input'), true);
@@ -2218,7 +2405,7 @@ if ($action !== '') {
                 'description' => $description,
                 'view_type' => $viewType,
                 'type_id' => $typeId,
-                'generator_version' => $generatorMetadata['version'],
+                'generator_version' => crudVersionNormalize((string) $generatorMetadata['version'], GENERATED_PAGE_VERSION),
                 'sql' => $built['sql'],
                 'fields' => $built['fields'],
                 'rows_per_page' => max(1, min(500, (int) ($payload['rows_per_page'] ?? 25))),
@@ -2236,7 +2423,10 @@ if ($action !== '') {
             ];
 
             $targetPath = $paths['pages'] . DIRECTORY_SEPARATOR . $fileName;
-            $configuration['generated_page_version'] = resolveNextGeneratedPageVersion($targetPath);
+            $configuration['generated_page_version'] = resolveNextGeneratedPageVersion(
+                $targetPath,
+                CRUD_FIXED_VERSION_MAJOR . '.0'
+            );
             $generatedCode = $saveOnly ? '' : repairGeneratedDisplayValueBlock(generatePagePhp($configuration));
 
             $db->beginTransaction();
@@ -2760,6 +2950,8 @@ if ($progettoId > 0) {
 .relation-join-description { max-width: 280px; }
 .schema-stop { border-left: 5px solid #dc3545; }
 .sticky-summary { position: sticky; top: 1rem; }
+.crud-validation-panel ul { margin-bottom: 0; padding-left: 1.2rem; }
+.crud-validation-summary { display: flex; flex-wrap: wrap; gap: .5rem; }
 
 
 /* Layout dinamico - Campi da visualizzare */
@@ -3084,6 +3276,17 @@ if ($progettoId > 0) {
                                 <div class="form-text">
                                     Il CRUD opera esclusivamente sulla tabella principale.
                                     Le foreign key vengono mostrate come menu a discesa con descrizione leggibile.
+                                </div>
+                            </div>
+                            <div class="col-12">
+                                <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+                                    <div class="fw-semibold">Controllo applicazione CRUD</div>
+                                    <button type="button" class="btn btn-sm btn-outline-primary" id="validateCrudButton">
+                                        Verifica CRUD
+                                    </button>
+                                </div>
+                                <div id="crudValidationMessage" class="alert alert-light border crud-validation-panel mb-0">
+                                    Attivare il CRUD e premere "Verifica CRUD" per controllare correttezza ed errori della selezione.
                                 </div>
                             </div>
 

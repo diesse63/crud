@@ -1,4 +1,16 @@
 <?php
+/**
+ * ============================================================
+ * File generato automaticamente dall'applicazione CRUD.
+ *
+ * Generatore : CRUD Generator
+ * Versione creatore : 1.0
+ * Versione pagina   : 1.0
+ * Creato il  : 2026-08-18 00:00:00
+ * Modificato il: 2026-08-18 00:00:00
+ * Progetto   : gestionale
+ * ============================================================
+ */
 class Database {
     private $pdo;
 

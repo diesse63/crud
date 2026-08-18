@@ -4,10 +4,11 @@
  *
  * Comportamento client-side minimo per la sezione iniziale di creatore_pagina.
  *
- * Versione: 1.77
+ * Versione: 1.78
  * Aggiornato: 2026-08-18
  * - Allineate le etichette Scheda e Tabella ai rispettivi flag di visibilita.
  * - Preparato il supporto alla distinzione table/modal per la vista tabellare.
+ * - Aggiunto il controllo di applicabilita CRUD con messaggi dedicati nella sezione opzioni generali.
  */
 
 declare(strict_types=1);
@@ -30,6 +31,9 @@ if (basename((string) ($_SERVER['SCRIPT_FILENAME'] ?? '')) === basename(__FILE__
     };
     let selectedFieldCollapseState = {};
     let sqlPreviewRefreshTimer = null;
+    let crudValidationRefreshTimer = null;
+    let crudValidationRequestSerial = 0;
+    let lastCrudValidationFingerprint = '';
     function normalizeWithUnderscores(value) {
         return String(value || '')
             .trim()
@@ -68,6 +72,46 @@ if (basename((string) ($_SERVER['SCRIPT_FILENAME'] ?? '')) === basename(__FILE__
             sqlPreviewRefreshTimer = null;
             refreshSqlPreview();
         }, 0);
+    }
+
+    function getCrudActionLabels() {
+        return {
+            add: 'Aggiungi',
+            edit: 'Modifica',
+            delete: 'Cancella',
+        };
+    }
+
+    function formatCrudActionList(actions) {
+        const labels = getCrudActionLabels();
+        return (Array.isArray(actions) ? actions : [])
+            .map((action) => labels[String(action || '').trim()] || String(action || '').trim())
+            .filter((label) => label !== '')
+            .join(', ');
+    }
+
+    function setCrudValidationMessage(html, tone = 'light') {
+        const panel = document.getElementById('crudValidationMessage');
+        if (!panel) return;
+
+        const classes = {
+            light: 'alert alert-light border crud-validation-panel mb-0',
+            info: 'alert alert-info crud-validation-panel mb-0',
+            success: 'alert alert-success crud-validation-panel mb-0',
+            warning: 'alert alert-warning crud-validation-panel mb-0',
+            danger: 'alert alert-danger crud-validation-panel mb-0',
+        };
+
+        panel.className = classes[tone] || classes.light;
+        panel.innerHTML = html;
+    }
+
+    function resetCrudValidationMessage() {
+        lastCrudValidationFingerprint = '';
+        setCrudValidationMessage(
+            'Attivare il CRUD e premere "Verifica CRUD" per controllare correttezza ed errori della selezione.',
+            'light'
+        );
     }
 
     window.creatorePaginaSyncDataFields = function (sourceField, isBlur = false) {
@@ -344,6 +388,7 @@ if (basename((string) ($_SERVER['SCRIPT_FILENAME'] ?? '')) === basename(__FILE__
                     mainTableRelationState.selectedRelationIds = Array.from(selected);
                     renderMainTableRelations(mainTableRelationState.relations);
                     renderMainTableFieldLists();
+                    scheduleCrudValidationRefresh();
                 });
                 return;
             }
@@ -369,6 +414,7 @@ if (basename((string) ($_SERVER['SCRIPT_FILENAME'] ?? '')) === basename(__FILE__
 
                 renderMainTableRelations(mainTableRelationState.relations);
                 renderMainTableFieldLists();
+                scheduleCrudValidationRefresh();
             });
         });
 
@@ -868,6 +914,197 @@ if (basename((string) ($_SERVER['SCRIPT_FILENAME'] ?? '')) === basename(__FILE__
         };
     }
 
+    function renderCrudValidationResult(validation) {
+        const status = String(validation?.status || 'DISABLED').toUpperCase();
+        const requestedActions = Object.entries(validation?.requested_actions || {})
+            .filter(([, value]) => value === true)
+            .map(([key]) => key);
+        const applicableActions = Object.entries(validation?.applicable_actions || {})
+            .filter(([, value]) => value === true)
+            .map(([key]) => key);
+        const blockedActions = Array.isArray(validation?.blocked_actions)
+            ? validation.blocked_actions
+            : [];
+        const errors = Array.isArray(validation?.errors) ? validation.errors : [];
+        const warnings = Array.isArray(validation?.warnings) ? validation.warnings : [];
+        const infos = Array.isArray(validation?.infos) ? validation.infos : [];
+        const tone = status === 'VALID'
+            ? 'success'
+            : status === 'PARTIAL'
+                ? 'warning'
+                : status === 'DISABLED'
+                    ? 'light'
+                    : 'danger';
+
+        const fragments = [
+            `<div class="fw-semibold mb-2">${escapeHtml(validation?.message || '')}</div>`,
+            '<div class="crud-validation-summary mb-2">',
+            `<span class="badge text-bg-secondary">Richieste: ${escapeHtml(formatCrudActionList(requestedActions) || 'nessuna')}</span>`,
+            `<span class="badge text-bg-success">Applicabili: ${escapeHtml(formatCrudActionList(applicableActions) || 'nessuna')}</span>`,
+            `<span class="badge text-bg-danger">Bloccate: ${escapeHtml(formatCrudActionList(blockedActions) || 'nessuna')}</span>`,
+            '</div>',
+        ];
+
+        if (errors.length) {
+            fragments.push('<div class="fw-semibold text-danger mb-1">Errori</div>');
+            fragments.push(`<ul>${errors.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>`);
+        }
+
+        if (warnings.length) {
+            fragments.push('<div class="fw-semibold text-warning mb-1">Segnalazioni</div>');
+            fragments.push(`<ul>${warnings.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>`);
+        }
+
+        if (infos.length) {
+            fragments.push('<div class="fw-semibold text-info mb-1">Controlli</div>');
+            fragments.push(`<ul>${infos.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>`);
+        }
+
+        setCrudValidationMessage(fragments.join(''), tone);
+    }
+
+    function buildCrudValidationFingerprint(payload) {
+        return JSON.stringify({
+            crud_enabled: Boolean(payload?.crud_enabled),
+            crud_add: Boolean(payload?.crud_add),
+            crud_edit: Boolean(payload?.crud_edit),
+            crud_delete: Boolean(payload?.crud_delete),
+            main_table_id: Number(payload?.main_table_id || 0),
+            tables: Array.isArray(payload?.tables) ? payload.tables : [],
+            fields: Array.isArray(payload?.fields)
+                ? payload.fields.map((field) => ({
+                    field_id: Number(field?.field_id || 0),
+                    table_id: Number(field?.table_id || 0),
+                    source_fk_id: Number(field?.source_fk_id || 0),
+                }))
+                : [],
+        });
+    }
+
+    function buildCrudConfirmationMessage(validation) {
+        const status = String(validation?.status || '').toUpperCase();
+        const requestedActions = Object.entries(validation?.requested_actions || {})
+            .filter(([, value]) => value === true)
+            .map(([key]) => key);
+        const applicableActions = Object.entries(validation?.applicable_actions || {})
+            .filter(([, value]) => value === true)
+            .map(([key]) => key);
+        const blockedActions = Array.isArray(validation?.blocked_actions)
+            ? validation.blocked_actions
+            : [];
+        const warnings = Array.isArray(validation?.warnings) ? validation.warnings : [];
+        const infos = Array.isArray(validation?.infos) ? validation.infos : [];
+        const lines = [];
+
+        lines.push('Confermi il salvataggio e la verifica dei dati?');
+
+        if (status === 'VALID' || status === 'PARTIAL') {
+            lines.push('');
+            lines.push(`CRUD richiesto: ${formatCrudActionList(requestedActions) || 'nessuna azione'}`);
+            lines.push(`CRUD applicabile: ${formatCrudActionList(applicableActions) || 'nessuna azione'}`);
+            if (blockedActions.length) {
+                lines.push(`CRUD bloccato: ${formatCrudActionList(blockedActions)}`);
+            }
+        }
+
+        if (warnings.length) {
+            lines.push('');
+            lines.push(`Segnalazione: ${String(warnings[0] || '').trim()}`);
+        } else if (infos.length) {
+            lines.push('');
+            lines.push(`Controllo: ${String(infos[0] || '').trim()}`);
+        }
+
+        return lines.join('\n');
+    }
+
+    async function validateCrudSelection(options = {}) {
+        const { silent = false } = options;
+        const payload = buildSavePayload();
+        const fingerprint = buildCrudValidationFingerprint(payload);
+        const requestedActionCount = [payload.crud_add, payload.crud_edit, payload.crud_delete].filter(Boolean).length;
+
+        if (!payload.crud_enabled) {
+            lastCrudValidationFingerprint = fingerprint;
+            renderCrudValidationResult({
+                status: 'DISABLED',
+                message: 'CRUD non abilitato.',
+                requested_actions: { add: false, edit: false, delete: false },
+                applicable_actions: { add: false, edit: false, delete: false },
+                blocked_actions: [],
+                infos: ['Attivare "Abilita CRUD" per eseguire il controllo di applicabilita.'],
+            });
+            return { ok: true, validation: { status: 'DISABLED' } };
+        }
+
+        if (!payload.main_table_id || !payload.fields.length) {
+            if (!silent) {
+                setCrudValidationMessage(
+                    'Per verificare il CRUD selezionare prima tabella principale e almeno un campo.',
+                    'warning'
+                );
+            }
+            return { ok: false, validation: { status: 'INVALID' } };
+        }
+
+        if (requestedActionCount === 0) {
+            lastCrudValidationFingerprint = fingerprint;
+            renderCrudValidationResult({
+                status: 'INVALID',
+                message: 'Nessuna azione CRUD selezionata.',
+                requested_actions: { add: false, edit: false, delete: false },
+                applicable_actions: { add: false, edit: false, delete: false },
+                blocked_actions: [],
+                errors: ['Selezionare almeno una tra Aggiungi, Modifica e Cancella.'],
+            });
+            return { ok: false, validation: { status: 'INVALID' } };
+        }
+
+        const requestId = ++crudValidationRequestSerial;
+        if (!silent) {
+            setCrudValidationMessage('Verifica CRUD in corso...', 'info');
+        }
+
+        try {
+            const data = await postCreatorAction('validate_crud', payload);
+            if (requestId !== crudValidationRequestSerial) {
+                return { ok: false, stale: true, validation: null };
+            }
+
+            const validation = data?.validation || {};
+            lastCrudValidationFingerprint = fingerprint;
+            renderCrudValidationResult(validation);
+            return { ok: String(validation?.status || '').toUpperCase() !== 'INVALID', validation };
+        } catch (error) {
+            if (requestId !== crudValidationRequestSerial) {
+                return { ok: false, stale: true, validation: null };
+            }
+
+            setCrudValidationMessage(
+                `<div class="fw-semibold mb-1">Verifica CRUD non completata</div><div>${escapeHtml(error?.message || error)}</div>`,
+                'danger'
+            );
+            return { ok: false, error };
+        }
+    }
+
+    function scheduleCrudValidationRefresh(force = false) {
+        if (crudValidationRefreshTimer) {
+            window.clearTimeout(crudValidationRefreshTimer);
+        }
+
+        crudValidationRefreshTimer = window.setTimeout(async () => {
+            crudValidationRefreshTimer = null;
+            const payload = buildSavePayload();
+            const nextFingerprint = buildCrudValidationFingerprint(payload);
+            if (!force && nextFingerprint === lastCrudValidationFingerprint) {
+                return;
+            }
+
+            await validateCrudSelection({ silent: true });
+        }, 180);
+    }
+
     async function refreshSqlPreview() {
         const sqlPreview = document.getElementById('sqlPreview');
         if (!sqlPreview) return;
@@ -913,6 +1150,7 @@ if (basename((string) ($_SERVER['SCRIPT_FILENAME'] ?? '')) === basename(__FILE__
 
         if (!tableId) {
             updateMainTableFieldsLabel(mainTable);
+            scheduleCrudValidationRefresh(true);
             return {
                 tableName: '',
                 fields: [],
@@ -944,6 +1182,7 @@ if (basename((string) ($_SERVER['SCRIPT_FILENAME'] ?? '')) === basename(__FILE__
             mainTableRelationState.relations = Array.isArray(data.relations) ? data.relations : [];
             renderMainTableRelations(mainTableRelationState.relations);
             renderMainTableFieldLists();
+            scheduleCrudValidationRefresh(true);
             return {
                 tableName,
                 fields,
@@ -1015,6 +1254,7 @@ if (basename((string) ($_SERVER['SCRIPT_FILENAME'] ?? '')) === basename(__FILE__
         mainTable.dataset.boundMainTable = '1';
         mainTable.addEventListener('change', () => {
             loadMainTableFields(mainTable);
+            scheduleCrudValidationRefresh(true);
         });
 
         loadMainTableFields(mainTable);
@@ -1027,6 +1267,29 @@ if (basename((string) ($_SERVER['SCRIPT_FILENAME'] ?? '')) === basename(__FILE__
         button.dataset.boundRefreshPreview = '1';
         button.addEventListener('click', () => {
             refreshSqlPreview();
+        });
+    }
+
+    function bindCrudValidationButton() {
+        const button = document.getElementById('validateCrudButton');
+        if (!button || button.dataset.boundCrudValidation === '1') return;
+
+        button.dataset.boundCrudValidation = '1';
+        button.addEventListener('click', async () => {
+            await validateCrudSelection({ silent: false });
+        });
+    }
+
+    function bindCrudControls() {
+        ['crudEnabled', 'crudAdd', 'crudEdit', 'crudDelete'].forEach((id) => {
+            const control = document.getElementById(id);
+            if (!control || control.dataset.boundCrudControl === '1') return;
+
+            control.dataset.boundCrudControl = '1';
+            control.addEventListener('change', () => {
+                syncCrudCheckboxDefaults();
+                scheduleCrudValidationRefresh(true);
+            });
         });
     }
 
@@ -1395,7 +1658,23 @@ if (basename((string) ($_SERVER['SCRIPT_FILENAME'] ?? '')) === basename(__FILE__
                 return;
             }
 
-            if (!window.confirm('Confermi il salvataggio e la verifica dei dati?')) {
+            const crudCheck = await validateCrudSelection({ silent: false });
+            if (payload.crud_enabled && (!crudCheck.ok || String(crudCheck?.validation?.status || '').toUpperCase() === 'INVALID')) {
+                setLoadReportSummary([
+                    'Salvataggio non eseguito.',
+                    'La selezione CRUD non e corretta.',
+                    'Correggere gli errori mostrati nella sezione 5 prima di riprovare.',
+                ]);
+                setLoadDebug('Blocco salvataggio: validazione CRUD non superata.', 'danger');
+                setResultMessage('<div class="alert alert-danger">Correggere il controllo CRUD nella sezione 5 prima di salvare.</div>');
+                return;
+            }
+
+            const confirmationMessage = payload.crud_enabled
+                ? buildCrudConfirmationMessage(crudCheck?.validation || {})
+                : 'Confermi il salvataggio e la verifica dei dati?';
+
+            if (!window.confirm(confirmationMessage)) {
                 setLoadReportSummary([
                     'Salvataggio annullato.',
                     'La conferma utente non è stata accettata.',
@@ -1625,6 +1904,7 @@ if (basename((string) ($_SERVER['SCRIPT_FILENAME'] ?? '')) === basename(__FILE__
             crudAdd.checked = false;
             crudEdit.checked = false;
             crudDelete.checked = false;
+            scheduleCrudValidationRefresh(true);
             return;
         }
 
@@ -1673,6 +1953,7 @@ if (basename((string) ($_SERVER['SCRIPT_FILENAME'] ?? '')) === basename(__FILE__
         if (crudAdd) crudAdd.checked = false;
         if (crudEdit) crudEdit.checked = false;
         if (crudDelete) crudDelete.checked = false;
+        resetCrudValidationMessage();
     }
 
     async function loadCreatorConfigurationOnEditMode() {
@@ -1797,6 +2078,7 @@ if (basename((string) ($_SERVER['SCRIPT_FILENAME'] ?? '')) === basename(__FILE__
         if (crudAdd) crudAdd.checked = Number(page.crud_aggiungi || 0) === 1;
         if (crudEdit) crudEdit.checked = Number(page.crud_modifica || 0) === 1;
         if (crudDelete) crudDelete.checked = Number(page.crud_cancella || 0) === 1;
+        scheduleCrudValidationRefresh(true);
 
         const selectedTypeId = Number(page.IDtipo || page.tipo_id || 0);
         if (tipoId && selectedTypeId) {
@@ -1976,6 +2258,7 @@ if (basename((string) ($_SERVER['SCRIPT_FILENAME'] ?? '')) === basename(__FILE__
             `Campi selezionati: ${mainTableFieldState.selectedFields.length}.`,
             `Relazioni attive: ${mainTableRelationState.selectedRelationIds.length}.`,
         ]);
+        scheduleCrudValidationRefresh(true);
     }
 
     async function bootstrapCreatorPage() {
@@ -1992,9 +2275,12 @@ if (basename((string) ($_SERVER['SCRIPT_FILENAME'] ?? '')) === basename(__FILE__
         bindTipoIdSelect();
         bindMainTableSelect();
         bindRefreshPreviewButton();
+        bindCrudValidationButton();
+        bindCrudControls();
         bindSaveConfigButton();
         bindGenerateButton();
         syncCrudCheckboxDefaults();
+        resetCrudValidationMessage();
         setLoadDebug('Eventi UI collegati.', 'info');
 
         const loadDebugResetButton = document.getElementById('loadDebugResetButton');
