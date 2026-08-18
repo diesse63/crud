@@ -272,60 +272,58 @@ PHP;
 function generatedTableRowCardModalPhp(): string
 {
     return <<<'PHP'
-                        <?php if ($modalEnabled && $modalConfig): ?>
-                            <?php foreach ($rows as $rowIndex => $row): ?>
+                        <?php if ($hasModalDetail): ?>
                                 <?php
-                                $modalRows = $modalDataByRow[$rowIndex] ?? [];
-                                $modalRow = $modalRows[0] ?? null;
-                                $modalParentValue = $row[$modalConfig['main_value_alias']] ?? null;
+                                $modalRows = $hasLinkedModalDetail ? ($modalDataByRow[$rowIndex] ?? []) : [];
+                                $modalRow = $hasLinkedModalDetail ? ($modalRows[0] ?? null) : $row;
+                                $modalParentValue = $hasLinkedModalDetail
+                                    ? ($row[$modalConfig['main_value_alias']] ?? null)
+                                    : null;
+                                $detailFields = $hasLinkedModalDetail
+                                    ? $modalConfig['fields']
+                                    : $modalVisibleFields;
                                 $modalCollapseId = 'recordInline' . $rowIndex;
                                 ?>
-                                <tr class="table-secondary">
-                                    <td colspan="<?= count($visibleFields) + (($hasModalDetail || ($crudEnabled && ($crudEdit || $crudDelete))) ? 1 : 0) ?>">
-                                        <div class="collapse mt-3" id="<?= htmlspecialchars($modalCollapseId, ENT_QUOTES, 'UTF-8') ?>">
-                                            <div class="border rounded p-3 bg-info-subtle">
-                                                <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
-                                                    <div>
-                                                        <strong><?= htmlspecialchars((string) ($modalConfig['title'] ?? 'Scheda collegata'), ENT_QUOTES, 'UTF-8') ?></strong>
-                                                        <div class="small text-muted">Dettaglio record collegati</div>
-                                                    </div>
-                                                </div>
-
-                                                <?php if (!$modalRow): ?>
-                                                    <div class="alert alert-secondary mb-0">
-                                                        Nessun dato collegato trovato.
-                                                    </div>
-                                                <?php else: ?>
-                                                    <div class="table-responsive">
-                                                        <table class="table table-bordered table-striped align-middle mb-0">
-                                                            <thead class="table-light">
-                                                                <tr>
-                                                                    <?php foreach ($modalConfig['fields'] as $field): ?>
-                                                                        <th><?= htmlspecialchars((string) $field['label'], ENT_QUOTES, 'UTF-8') ?></th>
-                                                                    <?php endforeach; ?>
-                                                                </tr>
-                                                            </thead>
-                                                            <tbody>
-                                                                <tr>
-                                                                    <?php foreach ($modalConfig['fields'] as $field): ?>
-                                                                        <td>
-                                                                            <?= displayValue(
-                                                                                $modalRow[$field['alias']] ?? null,
-                                                                                (string) ($field['format'] ?? 'AUTOMATICO'),
-                                                                                (string) ($field['base_path'] ?? '')
-                                                                            ) ?>
-                                                                        </td>
-                                                                    <?php endforeach; ?>
-                                                                </tr>
-                                                            </tbody>
-                                                        </table>
-                                                    </div>
-                                                <?php endif; ?>
+                                <tr class="collapse table-secondary"
+                                    id="<?= htmlspecialchars($modalCollapseId, ENT_QUOTES, 'UTF-8') ?>">
+                                    <td colspan="<?= count($visibleFields) + (($crudEnabled && ($crudEdit || $crudDelete)) ? 1 : 0) ?>">
+                                    <div class="border rounded p-3 bg-info-subtle my-2">
+                                        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+                                            <div>
+                                                <strong><?= htmlspecialchars((string) ($modalConfig['title'] ?? 'Dettaglio'), ENT_QUOTES, 'UTF-8') ?></strong>
+                                                <div class="small text-muted">Dettaglio record</div>
                                             </div>
                                         </div>
+
+                                        <?php if (!$modalRow): ?>
+                                            <div class="alert alert-secondary mb-0">
+                                                Nessun dato collegato trovato.
+                                            </div>
+                                        <?php else: ?>
+                                            <div class="table-responsive">
+                                                <table class="table table-sm table-bordered align-middle mb-0">
+                                                    <tbody>
+                                                        <?php foreach ($detailFields as $field): ?>
+                                                            <tr>
+                                                                <th style="width:35%">
+                                                                    <?= htmlspecialchars((string) $field['label'], ENT_QUOTES, 'UTF-8') ?>
+                                                                </th>
+                                                                <td>
+                                                                    <?= displayValue(
+                                                                        $modalRow[$field['alias'] ?? $field['output_alias']] ?? null,
+                                                                        (string) ($field['format'] ?? 'AUTOMATICO'),
+                                                                        (string) ($field['base_path'] ?? '')
+                                                                    ) ?>
+                                                                </td>
+                                                            </tr>
+                                                        <?php endforeach; ?>
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        <?php endif; ?>
+                                    </div>
                                     </td>
                                 </tr>
-                            <?php endforeach; ?>
                         <?php endif; ?>
 PHP;
 }

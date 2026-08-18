@@ -4,9 +4,10 @@
  *
  * Comportamento client-side minimo per la sezione iniziale di creatore_pagina.
  *
- * Versione: 1.76
- * Aggiornato: 2026-08-17
+ * Versione: 1.77
+ * Aggiornato: 2026-08-18
  * - Allineate le etichette Scheda e Tabella ai rispettivi flag di visibilita.
+ * - Preparato il supporto alla distinzione table/modal per la vista tabellare.
  */
 
 declare(strict_types=1);
@@ -530,7 +531,7 @@ if (basename((string) ($_SERVER['SCRIPT_FILENAME'] ?? '')) === basename(__FILE__
                                     <div class="col-4">
                                         <div class="form-check">
                                             <input class="form-check-input" type="checkbox" data-field-prop="visible_table" data-field-id="${fieldId}" data-field-key="${fieldSelectionKey}" ${fieldVisibleTable}>
-                                            <label class="form-check-label">Tabella</label>
+                                            <label class="form-check-label">Table</label>
                                         </div>
                                     </div>
                                     <div class="col-4">
@@ -542,7 +543,7 @@ if (basename((string) ($_SERVER['SCRIPT_FILENAME'] ?? '')) === basename(__FILE__
                                     <div class="col-4">
                                         <div class="form-check">
                                             <input class="form-check-input" type="checkbox" data-field-prop="visible_modal" data-field-id="${fieldId}" data-field-key="${fieldSelectionKey}" ${fieldVisibleModal}>
-                                            <label class="form-check-label">Modale</label>
+                                            <label class="form-check-label">Modal</label>
                                         </div>
                                     </div>
                                 </div>
@@ -823,6 +824,7 @@ if (basename((string) ($_SERVER['SCRIPT_FILENAME'] ?? '')) === basename(__FILE__
         const crudDelete = document.getElementById('crudDelete');
         const tipoId = document.getElementById('tipoId');
         const selectedOption = tipoId && tipoId.options ? tipoId.options[tipoId.selectedIndex] : null;
+        const isTableType = Number(tipoId?.value || 0) === 2;
 
         return {
             page_name: String(pageName?.value || '').trim(),
@@ -831,6 +833,7 @@ if (basename((string) ($_SERVER['SCRIPT_FILENAME'] ?? '')) === basename(__FILE__
             description: String(description?.value || '').trim(),
             view_type: String(selectedOption?.dataset?.code || '').toUpperCase() || 'TABELLA_MODALE',
             IDtipo: Number(tipoId?.value || 0),
+            modal_enabled: isTableType ? true : Boolean(document.getElementById('modalEnabled')?.checked),
             rows_per_page: Number(rowsPerPage?.value || 25),
             search_enabled: Boolean(searchEnabled?.checked),
             sort_enabled: Boolean(sortEnabled?.checked),
@@ -1521,6 +1524,8 @@ if (basename((string) ($_SERVER['SCRIPT_FILENAME'] ?? '')) === basename(__FILE__
                     crud_delete: Number(loadedData.page?.crud_cancella || 0) === 1,
                     view_type: String(loadedData.page?.tipo_visualizzazione || ''),
                     IDtipo: Number(loadedData.page?.IDtipo || 0),
+                    modal_enabled: Number(loadedData.page?.IDtipo || 0) === 2
+                        || Number(loadedData.page?.mostra_dettaglio_modale || 0) === 1,
                     main_table_id: Number(loadedData.page?.IDtabella_principale || 0),
                     tables: Array.isArray(loadedData.tables)
                         ? loadedData.tables
@@ -1544,6 +1549,7 @@ if (basename((string) ($_SERVER['SCRIPT_FILENAME'] ?? '')) === basename(__FILE__
                             visible_card: isSinglePageType(loadedData.page)
                                 ? Number(field?.visibile_scheda ?? field?.visible_card ?? 0) === 1 ? 1 : 0
                                 : 0,
+                            visible_modal: Number(field?.visibile_modale ?? field?.visible_modal ?? 0) === 1 ? 1 : 0,
                             searchable: Number(field?.ricercabile ?? field?.searchable ?? 0) === 1 ? 1 : 0,
                             sortable: Number(field?.ordinabile ?? field?.sortable ?? 0) === 1 ? 1 : 0,
                             format: resolveFieldFormatValue({
@@ -1627,6 +1633,13 @@ if (basename((string) ($_SERVER['SCRIPT_FILENAME'] ?? '')) === basename(__FILE__
             crudAdd.checked = Boolean(crudAdd?.checked);
             crudEdit.checked = Boolean(crudEdit?.checked);
             crudDelete.checked = Boolean(crudDelete?.checked);
+        }
+
+        const modalEnabled = document.getElementById('modalEnabled');
+        const tipoId = document.getElementById('tipoId');
+        if (modalEnabled && Number(tipoId?.value || 0) === 2) {
+            modalEnabled.checked = true;
+            modalEnabled.disabled = true;
         }
     }
 
@@ -1790,6 +1803,11 @@ if (basename((string) ($_SERVER['SCRIPT_FILENAME'] ?? '')) === basename(__FILE__
             tipoId.value = String(selectedTypeId);
             setLoadDebug(`Tipo scheda impostato su ID ${selectedTypeId}.`, 'info');
         }
+        const modalEnabled = document.getElementById('modalEnabled');
+        if (modalEnabled) {
+            modalEnabled.checked = selectedTypeId === 2 || Number(page.mostra_dettaglio_modale || 0) === 1;
+            modalEnabled.disabled = selectedTypeId === 2;
+        }
         setLoadDebug(`Campi base applicati: pageName=${String(pageName?.value || '')} | fileName=${String(fileName?.value || '')} | rowsPerPage=${String(rowsPerPage?.value || '')}.`, 'info');
 
         let loadedMainTableState = {
@@ -1881,6 +1899,7 @@ if (basename((string) ($_SERVER['SCRIPT_FILENAME'] ?? '')) === basename(__FILE__
                 visible_card: loadedIsSinglePageType
                     ? Number(field?.visibile_scheda ?? field?.visible_card ?? 0) === 1
                     : false,
+                visible_modal: Number(field?.visibile_modale ?? field?.visible_modal ?? 0) === 1,
                 source_table_name: String(field?.tabella_nome || field?.source_table_name || ''),
                 source_table_id: Number(field?.IDtabella || field?.table_id || 0),
                 table_id: Number(field?.IDtabella || field?.table_id || 0),
@@ -1930,6 +1949,7 @@ if (basename((string) ($_SERVER['SCRIPT_FILENAME'] ?? '')) === basename(__FILE__
                 source_fk_id: Number(field?.source_fk_id || 0),
                 visible_table: field?.visible_table === true,
                 visible_card: field?.visible_card === true,
+                visible_modal: field?.visible_modal === true,
             }));
             setLoadDebug(`Campi tabella principale caricati: ${mainTableFieldState.fields.length}. Selezionati nella tabella: ${selectedMainFieldIds.size}.`, 'info');
             setLoadDebug(`Dettaglio campi tabella principale: ${summarizeArray(mainTableFieldState.fields.slice(0, 12).map(summarizeFieldDetail), 12)}`, 'info');

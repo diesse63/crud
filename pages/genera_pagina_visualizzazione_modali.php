@@ -115,91 +115,64 @@ PHP;
 function generatedTableRowCardModalPhp(): string
 {
     return <<<'PHP'
-                        <?php if ($modalEnabled && $modalConfig): ?>
-                            <?php foreach ($rows as $rowIndex => $row): ?>
+                        <?php if ($hasModalDetail): ?>
                                 <?php
-                                $modalRows = $modalDataByRow[$rowIndex] ?? [];
-                                $modalRow = $modalRows[0] ?? null;
-                                $modalParentValue = $row[$modalConfig['main_value_alias']] ?? null;
+                                $modalRows = $hasLinkedModalDetail ? ($modalDataByRow[$rowIndex] ?? []) : [];
+                                $modalRow = $hasLinkedModalDetail ? ($modalRows[0] ?? null) : $row;
+                                $modalParentValue = $hasLinkedModalDetail
+                                    ? ($row[$modalConfig['main_value_alias']] ?? null)
+                                    : null;
+                                $detailFields = $hasLinkedModalDetail
+                                    ? $modalConfig['fields']
+                                    : $modalVisibleFields;
                                 $modalCollapseId = 'recordInline' . $rowIndex;
                                 ?>
-                                <tr class="table-secondary">
-                                    <td colspan="<?= count($visibleFields) + (($hasModalDetail || ($crudEnabled && ($crudEdit || $crudDelete))) ? 1 : 0) ?>">
-                                        <div class="collapse mt-3" id="<?= htmlspecialchars($modalCollapseId, ENT_QUOTES, 'UTF-8') ?>">
-                                            <div class="border rounded p-3 bg-info-subtle">
-                                                <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
-                                                    <div>
-                                                        <strong><?= htmlspecialchars((string) ($modalConfig['title'] ?? 'Scheda collegata'), ENT_QUOTES, 'UTF-8') ?></strong>
-                                                        <div class="small text-muted">Dettaglio record collegati</div>
-                                                    </div>
-                                                </div>
-
-                                                <?php if (!$modalRow): ?>
-                                                    <div class="alert alert-secondary mb-0">
-                                                        Nessun dato collegato trovato.
-                                                    </div>
-                                                <?php else: ?>
-                                                    <div class="table-responsive">
-                                                        <table class="table table-sm table-bordered align-middle mb-0">
-                                                            <tbody>
-                                                                <?php foreach ($modalConfig['fields'] as $field): ?>
-                                                                    <tr>
-                                                                        <th style="width:35%">
-                                                                            <?= htmlspecialchars((string) $field['label'], ENT_QUOTES, 'UTF-8') ?>
-                                                                        </th>
-                                                                        <td>
-                                                                            <?= displayValue(
-                                                                                $modalRow[$field['alias']] ?? null,
-                                                                                (string) ($field['format'] ?? 'AUTOMATICO'),
-                                                                                (string) ($field['base_path'] ?? '')
-                                                                            ) ?>
-                                                                        </td>
-                                                                    </tr>
-                                                                <?php endforeach; ?>
-                                                            </tbody>
-                                                        </table>
-                                                    </div>
-                                                <?php endif; ?>
-
-                                                <?php if ($modalParentValue !== null && $modalParentValue !== ''): ?>
-                                                    <div class="small text-muted mt-3">
-                                                        Collegamento attivo.
-                                                    </div>
-                                                <?php endif; ?>
+                                <tr class="collapse table-secondary"
+                                    id="<?= htmlspecialchars($modalCollapseId, ENT_QUOTES, 'UTF-8') ?>">
+                                    <td colspan="<?= count($visibleFields) + (($crudEnabled && ($crudEdit || $crudDelete)) ? 1 : 0) ?>">
+                                    <div class="border rounded p-3 bg-info-subtle my-2">
+                                        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+                                            <div>
+                                                <strong><?= htmlspecialchars((string) ($modalConfig['title'] ?? 'Dettaglio'), ENT_QUOTES, 'UTF-8') ?></strong>
+                                                <div class="small text-muted">Dettaglio record</div>
                                             </div>
                                         </div>
+
+                                        <?php if (!$modalRow): ?>
+                                            <div class="alert alert-secondary mb-0">
+                                                Nessun dato collegato trovato.
+                                            </div>
+                                        <?php else: ?>
+                                            <div class="table-responsive">
+                                                <table class="table table-sm table-bordered align-middle mb-0">
+                                                    <tbody>
+                                                        <?php foreach ($detailFields as $field): ?>
+                                                            <tr>
+                                                                <th style="width:35%">
+                                                                    <?= htmlspecialchars((string) $field['label'], ENT_QUOTES, 'UTF-8') ?>
+                                                                </th>
+                                                                <td>
+                                                                    <?= displayValue(
+                                                                        $modalRow[$field['alias'] ?? $field['output_alias']] ?? null,
+                                                                        (string) ($field['format'] ?? 'AUTOMATICO'),
+                                                                        (string) ($field['base_path'] ?? '')
+                                                                    ) ?>
+                                                                </td>
+                                                            </tr>
+                                                        <?php endforeach; ?>
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        <?php endif; ?>
+
+                                        <?php if ($modalParentValue !== null && $modalParentValue !== ''): ?>
+                                            <div class="small text-muted mt-3">
+                                                Collegamento attivo.
+                                            </div>
+                                        <?php endif; ?>
+                                    </div>
                                     </td>
                                 </tr>
-                            <?php endforeach; ?>
-                            <script>
-                            document.querySelectorAll('.table-row-toggle').forEach(row => {
-                                row.addEventListener('click', event => {
-                                    if (event.target.closest('a,button,form,input,textarea,select,label')) {
-                                        return;
-                                    }
-
-                                    const targetSelector = row.dataset.inlineTarget;
-                                    if (!targetSelector) return;
-
-                                    const target = document.querySelector(targetSelector);
-                                    if (!target) return;
-
-                                    bootstrap.Collapse.getOrCreateInstance(target, { toggle: false }).toggle();
-                                });
-
-                                row.addEventListener('keydown', event => {
-                                    if (event.key !== 'Enter' && event.key !== ' ') return;
-                                    event.preventDefault();
-                                    const targetSelector = row.dataset.inlineTarget;
-                                    if (!targetSelector) return;
-
-                                    const target = document.querySelector(targetSelector);
-                                    if (!target) return;
-
-                                    bootstrap.Collapse.getOrCreateInstance(target, { toggle: false }).toggle();
-                                });
-                            });
-                            </script>
                         <?php endif; ?>
 PHP;
 }

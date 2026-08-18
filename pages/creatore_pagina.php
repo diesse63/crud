@@ -57,6 +57,11 @@ require_once __DIR__ . '/pannellate_core.php';
  * - Salva la configurazione nelle tabelle pagine_visualizzazione*.
  * - Genera una singola pagina PHP nella cartella /pages del progetto.
  *
+ * AGGIORNAMENTI 2026-08-18:
+ * - la generazione conserva il flag visibile_modale letto dalla configurazione;
+ * - la scheda tabellare usa i campi Modal per il dettaglio della riga.
+ * - il dettaglio si apre con doppio clic direttamente sotto la riga selezionata.
+ *
  * AGGIORNAMENTI v1.3:
  * - layout responsive ottimizzato per smartphone;
  * - toolbar, ricerca, pulsanti e navigazione adattati al mobile;
@@ -201,8 +206,8 @@ require_once __DIR__ . '/../db.php';
 $initialConfigurationId = isset($_GET['configuration_id']) ? max(0, (int) $_GET['configuration_id']) : 0;
 $saveErrorContext = [];
 
-const SCHEDA_SINGOLA_GENERATOR_VERSION = '1.37';
-const SCHEDA_TABELLARE_GENERATOR_VERSION = '1.10';
+const SCHEDA_SINGOLA_GENERATOR_VERSION = '1.38';
+const SCHEDA_TABELLARE_GENERATOR_VERSION = '1.15';
 const MASTER_DETAIL_GENERATOR_VERSION = '1.8';
 const GENERATED_PAGE_VERSION = '1.0';
 
@@ -2002,7 +2007,9 @@ if ($action !== '') {
             $crudConfiguration = buildCrudConfiguration(
                 $db,
                 $progettoId,
-                (int) ($payload['main_table_id'] ?? 0)
+                (int) ($payload['main_table_id'] ?? 0),
+                $selectedFieldsForBuild,
+                $selectedTablesForBuild
             );
 
             if ($crudRequested && empty($crudConfiguration['available'])) {
@@ -2203,10 +2210,14 @@ if ($action !== '') {
 
             $generatorMetadata = resolveGeneratedPageMetadata($viewType);
 
+            $isTableViewType = $typeId === 2;
+            $modalEnabled = $isTableViewType || !empty($payload['modal_enabled']);
+
             $configuration = [
                 'title' => $title ?: $pageName,
                 'description' => $description,
                 'view_type' => $viewType,
+                'type_id' => $typeId,
                 'generator_version' => $generatorMetadata['version'],
                 'sql' => $built['sql'],
                 'fields' => $built['fields'],
@@ -2214,8 +2225,8 @@ if ($action !== '') {
                 'search_enabled' => !empty($payload['search_enabled']),
                 'sort_enabled' => !empty($payload['sort_enabled']),
                 'pagination_enabled' => !empty($payload['pagination_enabled']),
-                'modal_enabled' => false,
-                'modal_config' => null,
+                'modal_enabled' => $modalEnabled,
+                'modal_config' => $modalConfig,
                 'modal_crud_config' => [],
                 'crud_enabled' => $crudRequested,
                 'crud_add' => $crudRequested && !empty($payload['crud_add']),

@@ -13,6 +13,7 @@ Il formato segue i principi di Keep a Changelog.
 
 ### Modificato
 
+- Separata la logica dei campi tabellari e del dettaglio modale nella vista tabellare, usando `visible_table` per la griglia principale e `visible_modal` per il collapse di dettaglio.
 - Isolata in `creatore_pagina.php` la scrittura materiale della pagina generata in una funzione dedicata, mantenendo invariata la costruzione basata sulle opzioni lette e il salvataggio nella cartella progetto.
 - In `creatore_pagina.php` la pannellata mostra ora sia la versione del creatore di pagina utilizzato sia la versione pagina nel formato `1.1`.
 - Rifiniti i layout mobile di `schema_db` e `cartella_progetto` per ridurre l'ingombro su schermi piccoli e migliorare la leggibilita delle sezioni laterali e delle liste file.

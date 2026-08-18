@@ -754,6 +754,7 @@ function generatePagePhp(array $configuration): string
     $title = var_export($configuration['title'], true);
     $sql = var_export($configuration['sql'], true);
     $type = var_export($configuration['view_type'], true);
+    $typeId = (int) ($configuration['type_id'] ?? 0);
     $rowsPerPage = max(1, (int) $configuration['rows_per_page']);
     $searchEnabled = $configuration['search_enabled'] ? 'true' : 'false';
     $sortEnabled = $configuration['sort_enabled'] ? 'true' : 'false';
@@ -840,6 +841,7 @@ try {
 
 \$pageTitle = {$title};
 \$viewType = {$type};
+\$pageTypeId = {$typeId};
 \$baseSql = {$sql};
 \$fields = {$fieldsExport};
 \$rowsPerPage = \$viewType === 'SCHEDA_SINGOLA' ? 1 : {$rowsPerPage};
@@ -854,10 +856,16 @@ try {
 \$crudEdit = {$crudEdit};
 \$crudDelete = {$crudDelete};
 
+\$modalVisibleFields = array_values(array_filter(
+    \$fields,
+    static fn (array \$field): bool => !empty(\$field['visible_modal'])
+));
+\$hasLinkedModalDetail =
+    is_array(\$modalConfig)
+    && !empty(\$modalConfig['fields']);
 \$hasModalDetail =
     \$modalEnabled
-    && is_array(\$modalConfig)
-    && !empty(\$modalConfig['fields']);
+    && (\$hasLinkedModalDetail || !empty(\$modalVisibleFields));
 
 \$hasExternalNavigation = false;
 foreach (\$fields as \$navigationField) {
@@ -1134,7 +1142,14 @@ foreach (\$fields as \$field) {
     if (!empty(\$field['searchable'])) {
         \$searchableAliases[] = \$field['output_alias'];
     }
-    if (!empty(\$field['sortable'])) {
+    if (
+        !empty(\$field['sortable'])
+        || (
+            \$pageTypeId === 2
+            && \$sortEnabled
+            && !empty(\$field['visible_table'])
+        )
+    ) {
         \$sortableAliases[\$field['output_alias']] = true;
     }
 }
@@ -1142,16 +1157,6 @@ foreach (\$fields as \$field) {
 \$wrappedSql = "SELECT * FROM (" . \$baseSql . ") generated_data";
 \$where = [];
 \$params = [];
-
-if (
-    \$crudEnabled
-    && \$navigateRecord !== null
-    && \$navigateRecord !== ''
-    && !empty(\$crudConfig['primary_key_alias'])
-) {
-    \$where[] = '`' . str_replace('`', '``', (string) \$crudConfig['primary_key_alias']) . '` = ?';
-    \$params[] = \$navigateRecord;
-}
 
 if (\$searchEnabled && \$search !== '' && \$searchableAliases) {
     \$parts = [];
@@ -1201,16 +1206,39 @@ if (\$where) {
 
 \$countSql = "SELECT COUNT(*) FROM (" . \$wrappedSql . ") count_data";
 \$totalRows = (int) \$db->fetchColumn(\$countSql, \$params);
-\$totalPages = \$paginationEnabled
+\$useRowPagination = \$paginationEnabled || \$pageTypeId === 1;
+\$totalPages = \$useRowPagination
     ? max(1, (int) ceil(\$totalRows / \$rowsPerPage))
     : 1;
 \$page = min(\$page, \$totalPages);
 
 if (\$sortEnabled && isset(\$sortableAliases[\$sort])) {
     \$wrappedSql .= " ORDER BY `" . str_replace('`', '``', \$sort) . "` " . \$direction;
+} elseif (\$sortEnabled && \$sortableAliases) {
+    \$defaultOrder = [];
+    foreach (array_keys(\$sortableAliases) as \$sortableAlias) {
+        \$defaultOrder[] = '`' . str_replace('`', '``', \$sortableAlias) . '` ASC';
+    }
+    \$wrappedSql .= ' ORDER BY ' . implode(', ', \$defaultOrder);
 }
 
-if (\$paginationEnabled) {
+if (
+    \$useRowPagination
+    && \$navigateRecord !== null
+    && \$navigateRecord !== ''
+    && !empty(\$crudConfig['primary_key_alias'])
+) {
+    \$primaryKeyAlias = (string) \$crudConfig['primary_key_alias'];
+    \$orderedRecords = \$db->fetchAll(\$wrappedSql, \$params);
+    foreach (\$orderedRecords as \$recordIndex => \$orderedRecord) {
+        if ((string) (\$orderedRecord[\$primaryKeyAlias] ?? '') === (string) \$navigateRecord) {
+            \$page = (int) floor(\$recordIndex / \$rowsPerPage) + 1;
+            break;
+        }
+    }
+}
+
+if (\$useRowPagination) {
     \$offset = (\$page - 1) * \$rowsPerPage;
     \$wrappedSql .= " LIMIT " . (int) \$rowsPerPage . " OFFSET " . (int) \$offset;
 }
@@ -1219,7 +1247,7 @@ if (\$paginationEnabled) {
 
 \$modalDataByRow = [];
 
-if (\$hasModalDetail) {
+if (\$hasLinkedModalDetail) {
     \$modalSelect = [];
     foreach (\$modalConfig['fields'] as \$field) {
         \$modalSelect[] =
@@ -1504,6 +1532,9 @@ function buildQuery(array \$overrides = []): string
     if (!array_key_exists('edit', \$overrides)) {
         unset(\$query['edit']);
     }
+    if (!array_key_exists('record', \$overrides)) {
+        unset(\$query['record']);
+    }
     foreach (\$query as \$key => \$value) {
         if (\$value === null || \$value === '') {
             unset(\$query[\$key]);
@@ -1523,7 +1554,7 @@ function buildQuery(array \$overrides = []): string
         </div>
 
         <div class="d-flex flex-wrap gap-2">
-            <?php if (\$crudEnabled && \$crudAdd): ?>
+            <?php if (\$crudEnabled && \$crudAdd && \$viewType !== 'SCHEDA_SINGOLA'): ?>
                 <button type="button"
                         class="btn btn-success"
                         data-bs-toggle="modal"
@@ -1532,18 +1563,12 @@ function buildQuery(array \$overrides = []): string
                 </button>
             <?php endif; ?>
 
-            <?php if (\$navigateRecord !== null): ?>
-                <a class="btn btn-outline-secondary"
-                   href="<?= htmlspecialchars(buildQuery(['record' => null, 'p' => 1]), ENT_QUOTES, 'UTF-8') ?>">
-                    <i class="bi bi-list me-1"></i>Torna all’elenco
-                </a>
-            <?php endif; ?>
         </div>
 
         <?php if (\$searchEnabled): ?>
             <form method="get" class="d-flex gap-2">
                 <?php foreach (\$_GET as \$key => \$value): ?>
-                    <?php if (!in_array(\$key, ['q', 'p', 'crud_message', 'edit'], true)): ?>
+                    <?php if (!in_array(\$key, ['q', 'p', 'crud_message', 'edit', 'record'], true)): ?>
                         <input type="hidden"
                                name="<?= htmlspecialchars((string) \$key, ENT_QUOTES, 'UTF-8') ?>"
                                value="<?= htmlspecialchars((string) \$value, ENT_QUOTES, 'UTF-8') ?>">
@@ -1638,8 +1663,14 @@ function buildQuery(array \$overrides = []): string
             </div>
         <?php else: ?>
             <?php \$row = \$rows[0]; ?>
+            <?php
+            \$currentPk = \$crudEnabled
+                ? (\$row[\$crudConfig['primary_key_alias']] ?? null)
+                : null;
+            ?>
 
-            <div class="card shadow-sm">
+            <div class="card shadow-sm"
+                 data-record-value="<?= htmlspecialchars((string) (\$currentPk ?? ''), ENT_QUOTES, 'UTF-8') ?>">
                 <div class="card-header bg-light d-flex flex-wrap justify-content-between align-items-center gap-2">
                     <strong><?= htmlspecialchars(\$pageTitle, ENT_QUOTES, 'UTF-8') ?></strong>
                     <div class="d-flex align-items-center gap-2">
@@ -1653,11 +1684,6 @@ function buildQuery(array \$overrides = []): string
                                 <i class="bi bi-table me-1"></i>Dettaglio
                             </button>
                         <?php endif; ?>
-                        <?php
-                        \$currentPk = \$crudEnabled
-                            ? (\$row[\$crudConfig['primary_key_alias']] ?? null)
-                            : null;
-                        ?>
                         <?php if (\$crudEnabled && \$currentPk !== null): ?>
                             <?php if (\$crudEdit): ?>
                                 <a class="btn btn-sm btn-outline-warning"
@@ -1665,7 +1691,7 @@ function buildQuery(array \$overrides = []): string
                                     <i class="bi bi-pencil me-1"></i>Modifica
                                 </a>
                             <?php endif; ?>
-                            <?php if (\$crudDelete): ?>
+                            <?php if (\$crudDelete && \$viewType !== 'SCHEDA_SINGOLA'): ?>
                                 <form method="post" class="d-inline"
                                       onsubmit="return confirm('Cancellare definitivamente il record?');">
                                     <input type="hidden" name="csrf" value="<?= htmlspecialchars(\$crudCsrf, ENT_QUOTES, 'UTF-8') ?>">
@@ -1756,7 +1782,7 @@ function buildQuery(array \$overrides = []): string
                     <tr>
                         <?php foreach (\$visibleFields as \$field): ?>
                             <th style="<?= \$field['width'] !== '' ? 'width:' . htmlspecialchars(\$field['width'], ENT_QUOTES, 'UTF-8') : '' ?>">
-                                <?php if (\$sortEnabled && !empty(\$field['sortable'])): ?>
+                                <?php if (\$pageTypeId === 2 && \$sortEnabled): ?>
                                     <?php
                                     \$newDirection = (\$sort === \$field['output_alias'] && \$direction === 'ASC') ? 'DESC' : 'ASC';
                                     ?>
@@ -1773,7 +1799,7 @@ function buildQuery(array \$overrides = []): string
                                 <?php endif; ?>
                             </th>
                         <?php endforeach; ?>
-                        <?php if (\$hasModalDetail || (\$crudEnabled && (\$crudEdit || \$crudDelete))): ?>
+                        <?php if (\$crudEnabled && (\$crudEdit || \$crudDelete)): ?>
                             <th class="text-end">Azioni</th>
                         <?php endif; ?>
                     </tr>
@@ -1781,7 +1807,7 @@ function buildQuery(array \$overrides = []): string
                 <tbody>
                     <?php if (!\$rows): ?>
                         <tr>
-                            <td colspan="<?= count(\$visibleFields) + ((\$hasModalDetail || (\$crudEnabled && (\$crudEdit || \$crudDelete))) ? 1 : 0) ?>"
+                            <td colspan="<?= count(\$visibleFields) + ((\$crudEnabled && (\$crudEdit || \$crudDelete)) ? 1 : 0) ?>"
                                 class="text-center text-muted py-4">
                                 Nessun dato disponibile.
                             </td>
@@ -1789,7 +1815,14 @@ function buildQuery(array \$overrides = []): string
                     <?php endif; ?>
 
                     <?php foreach (\$rows as \$rowIndex => \$row): ?>
-                        <tr>
+                        <?php
+                        \$rowRecordValue = \$crudEnabled
+                            ? (\$row[\$crudConfig['primary_key_alias']] ?? null)
+                            : null;
+                        ?>
+                        <tr class="<?= \$hasModalDetail ? 'table-row-toggle' : '' ?>"
+                            data-record-value="<?= htmlspecialchars((string) (\$rowRecordValue ?? ''), ENT_QUOTES, 'UTF-8') ?>"
+                            <?= \$hasModalDetail ? 'tabindex="0" role="button" aria-expanded="false" data-inline-target="#recordInline' . \$rowIndex . '"' : '' ?>>
                             <?php foreach (\$visibleFields as \$field): ?>
                                 <?php
                                 \$alignment = match (\$field['alignment']) {
@@ -1803,7 +1836,7 @@ function buildQuery(array \$overrides = []): string
                                 </td>
                             <?php endforeach; ?>
 
-                            <?php if (\$hasModalDetail || (\$crudEnabled && (\$crudEdit || \$crudDelete))): ?>
+                            <?php if (\$crudEnabled && (\$crudEdit || \$crudDelete)): ?>
                                 <?php
                                 \$currentPk = \$crudEnabled
                                     ? (\$row[\$crudConfig['primary_key_alias']] ?? null)
@@ -1811,15 +1844,6 @@ function buildQuery(array \$overrides = []): string
                                 ?>
                                 <td class="text-end">
                                     <div class="d-flex flex-wrap justify-content-end gap-1">
-                                        <?php if (\$hasModalDetail): ?>
-                                            <button type="button"
-                                                    class="btn btn-sm btn-outline-primary"
-                                                    data-bs-toggle="modal"
-                                                    data-bs-target="#recordModal<?= \$rowIndex ?>">
-                                                Dettaglio
-                                            </button>
-                                        <?php endif; ?>
-
                                         <?php if (\$crudEnabled && \$currentPk !== null): ?>
                                             <?php if (\$crudEdit): ?>
                                                 <a class="btn btn-sm btn-outline-warning"
@@ -1846,13 +1870,47 @@ function buildQuery(array \$overrides = []): string
                                 </td>
                             <?php endif; ?>
                         </tr>
+{$tableRowCardModalPhp}
                     <?php endforeach; ?>
                 </tbody>
             </table>
         </div>
     <?php endif; ?>
 
-    {$tableRowCardModalPhp}
+    <?php if (\$hasModalDetail): ?>
+        <script>
+        document.querySelectorAll('.table-row-toggle').forEach(row => {
+            row.addEventListener('dblclick', event => {
+                if (event.target.closest('a,button,form,input,textarea,select,label')) return;
+
+                const targetSelector = row.dataset.inlineTarget;
+                if (!targetSelector) return;
+
+                const target = document.querySelector(targetSelector);
+                if (!target) return;
+
+                bootstrap.Collapse.getOrCreateInstance(target, { toggle: false }).toggle();
+            });
+        });
+        </script>
+    <?php endif; ?>
+
+    <?php if (\$navigateRecord !== null && \$navigateRecord !== ''): ?>
+        <script>
+        (() => {
+            const requestedRecord = <?= json_encode((string) \$navigateRecord, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+            const selectedRow = Array.from(document.querySelectorAll('[data-record-value]'))
+                .find(row => row.dataset.recordValue === requestedRecord);
+            if (!selectedRow) return;
+
+            if (!selectedRow.hasAttribute('tabindex')) selectedRow.setAttribute('tabindex', '-1');
+            selectedRow.focus({ preventScroll: true });
+            window.requestAnimationFrame(() => {
+                selectedRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            });
+        })();
+        </script>
+    <?php endif; ?>
 
     <?php if (\$viewType !== 'SCHEDA_SINGOLA' && \$paginationEnabled && \$totalPages > 1): ?>
         <nav class="mt-3" aria-label="Paginazione">
@@ -1884,17 +1942,19 @@ function buildQuery(array \$overrides = []): string
     function renderCrudField(
         array \$field,
         mixed \$value,
-        array \$dropdowns
+        array \$dropdowns,
+        bool \$disabled = false
     ): void {
         \$name = (string) \$field['field_name'];
         \$safeName = htmlspecialchars(\$name, ENT_QUOTES, 'UTF-8');
         \$safeValue = htmlspecialchars((string) (\$value ?? ''), ENT_QUOTES, 'UTF-8');
         \$required = !empty(\$field['required']) ? 'required' : '';
+        \$disabledAttr = \$disabled ? 'disabled' : '';
 
         echo '<label class="form-label">' . htmlspecialchars(\$name, ENT_QUOTES, 'UTF-8') . '</label>';
 
         if (!empty(\$field['fk'])) {
-            echo '<select class="form-select" name="crud[' . \$safeName . ']" ' . \$required . '>';
+            echo '<select class="form-select" name="crud[' . \$safeName . ']" ' . \$required . ' ' . \$disabledAttr . '>';
             echo '<option value="">-- selezionare --</option>';
             foreach (\$dropdowns[\$name] ?? [] as \$option) {
                 \$selected = (string) (\$option['option_value'] ?? '') === (string) (\$value ?? '')
@@ -1914,12 +1974,12 @@ function buildQuery(array \$overrides = []): string
 
         if (\$type === 'text' || \$type === 'json') {
             echo '<textarea class="form-control" rows="3" name="crud[' . \$safeName . ']" '
-                . \$required . '>' . \$safeValue . '</textarea>';
+                . \$required . ' ' . \$disabledAttr . '>' . \$safeValue . '</textarea>';
             return;
         }
 
         if (\$type === 'boolean' || \$type === 'tinyint') {
-            echo '<select class="form-select" name="crud[' . \$safeName . ']" ' . \$required . '>';
+            echo '<select class="form-select" name="crud[' . \$safeName . ']" ' . \$required . ' ' . \$disabledAttr . '>';
             echo '<option value="">-- selezionare --</option>';
             echo '<option value="1"' . ((string) \$value === '1' ? ' selected' : '') . '>Sì</option>';
             echo '<option value="0"' . ((string) \$value === '0' ? ' selected' : '') . '>No</option>';
@@ -1954,11 +2014,11 @@ function buildQuery(array \$overrides = []): string
             : '';
 
         echo '<input type="' . \$inputType . '" class="form-control" name="crud['
-            . \$safeName . ']" value="' . \$safeValue . '"' . \$inputExtraAttributes . ' ' . \$required . '>';
+            . \$safeName . ']" value="' . \$safeValue . '"' . \$inputExtraAttributes . ' ' . \$required . ' ' . \$disabledAttr . '>';
     }
     ?>
 
-    <?php if (\$crudEnabled && \$crudAdd): ?>
+    <?php if (\$crudEnabled && \$crudAdd && \$viewType !== 'SCHEDA_SINGOLA'): ?>
         <div class="modal fade" id="crudInsertModal" tabindex="-1" aria-hidden="true">
             <div class="modal-dialog modal-lg modal-dialog-scrollable">
                 <form method="post" class="modal-content">
@@ -1973,14 +2033,13 @@ function buildQuery(array \$overrides = []): string
 
                         <div class="row g-3">
                             <?php foreach (\$crudConfig['fields'] as \$crudField): ?>
-                                <?php if (empty(\$crudField['editable'])) continue; ?>
                                 <?php if (isset(\$crudField['insert_visible']) && empty(\$crudField['insert_visible'])) continue; ?>
                                 <?php
                                 \$crudBootstrapCol = (int) (\$crudField['bootstrap_col'] ?? 6);
                                 if (\$crudBootstrapCol < 1 || \$crudBootstrapCol > 12) \$crudBootstrapCol = 6;
                                 ?>
                                 <div class="col-12 col-md-<?= \$crudBootstrapCol ?>">
-                                    <?php renderCrudField(\$crudField, null, \$crudDropdowns); ?>
+                                    <?php renderCrudField(\$crudField, null, \$crudDropdowns, empty(\$crudField['editable'])); ?>
                                 </div>
                             <?php endforeach; ?>
                         </div>
@@ -2025,7 +2084,6 @@ function buildQuery(array \$overrides = []): string
 
                         <div class="row g-3">
                             <?php foreach (\$crudConfig['fields'] as \$crudField): ?>
-                                <?php if (empty(\$crudField['editable'])) continue; ?>
                                 <?php if (isset(\$crudField['update_visible']) && empty(\$crudField['update_visible'])) continue; ?>
                                 <?php
                                 \$crudBootstrapCol = (int) (\$crudField['bootstrap_col'] ?? 6);
@@ -2035,7 +2093,8 @@ function buildQuery(array \$overrides = []): string
                                     <?php renderCrudField(
                                         \$crudField,
                                         \$crudEditRecord[\$crudField['field_name']] ?? null,
-                                        \$crudDropdowns
+                                        \$crudDropdowns,
+                                        empty(\$crudField['editable'])
                                     ); ?>
                                 </div>
                             <?php endforeach; ?>
@@ -2810,11 +2869,14 @@ if ($action !== '') {
                 }
             }
 
+            $isTableViewType = $typeId === 2;
+            $modalEnabled = $isTableViewType || !empty($payload['modal_enabled']);
+
             $rawModalForBuild = is_array($payload['modal_config'] ?? null)
                 ? $payload['modal_config']
                 : null;
 
-            if (!empty($payload['modal_enabled']) && $rawModalForBuild) {
+            if ($modalEnabled && $rawModalForBuild) {
                 $technicalMainFieldId = (int) ($rawModalForBuild['main_field_id'] ?? 0);
                 $technicalFieldPresent = false;
 
@@ -2902,7 +2964,7 @@ if ($action !== '') {
 
             $modalConfig = null;
 
-            if (!empty($payload['modal_enabled']) && is_array($payload['modal_config'] ?? null)) {
+            if ($modalEnabled && is_array($payload['modal_config'] ?? null)) {
                 $rawModal = $payload['modal_config'];
 
                 $linkedTable = loadTable(
@@ -3009,13 +3071,14 @@ if ($action !== '') {
                 'title' => $title ?: $pageName,
                 'description' => $description,
                 'view_type' => $viewType,
+                'type_id' => $typeId,
                 'sql' => $built['sql'],
                 'fields' => $built['fields'],
                 'rows_per_page' => max(1, min(500, (int) ($payload['rows_per_page'] ?? 25))),
                 'search_enabled' => !empty($payload['search_enabled']),
                 'sort_enabled' => !empty($payload['sort_enabled']),
                 'pagination_enabled' => !empty($payload['pagination_enabled']),
-                'modal_enabled' => !empty($payload['modal_enabled']),
+                'modal_enabled' => $modalEnabled,
                 'modal_config' => $modalConfig,
                 'crud_enabled' => $crudRequested,
                 'crud_add' => $crudRequested && !empty($payload['crud_add']),
@@ -4881,7 +4944,7 @@ if ($progettoId > 0) {
 
         const warnings = [];
         if (!isCard && visibleTableFields.length === 0) {
-            warnings.push('Nessun campo è visibile nella tabella.');
+            warnings.push('Nessun campo è visibile nella tabella principale.');
         }
         if (isCard && visibleCardFields.length === 0) {
             warnings.push('Nessun campo è visibile nella scheda.');
@@ -4891,7 +4954,7 @@ if ($progettoId > 0) {
             && currentPayload.modal_enabled
             && visibleModalFields.length === 0
         ) {
-            warnings.push('Il modale è abilitato ma non contiene campi visibili.');
+            warnings.push('Il dettaglio modale è abilitato ma non contiene campi visibili.');
         }
 
         if (warnings.length) {
